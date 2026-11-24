@@ -1,0 +1,22 @@
+options gen2
+
+require daslib/daspkg
+
+[export]
+def package() {
+    package_name("dasBison")
+    package_author("lookibed")
+    package_description("A parser generator for daslang: LALR(1) tables over integer terminals, with a byte-class front end")
+    package_license("MIT")
+    package_tag("parsing")
+    package_min_sdk("0.6")
+}
+
+[export]
+def resolve(sdk_version, version : string) {
+    if (empty(version) || version == "latest") {
+        download_branch("main")
+    } else {
+        download_tag("v{version}")
+    }
+}

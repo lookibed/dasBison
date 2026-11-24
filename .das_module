@@ -1,0 +1,9 @@
+options gen2
+require daslib/fio
+
+[export]
+def initialize(project_path : string) {
+    for (path in ["lalr", "bytes"]) {
+        register_native_path("bison", "{path}", "{project_path}/bison/{path}.das")
+    }
+}
