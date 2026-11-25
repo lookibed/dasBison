@@ -3,6 +3,7 @@ options indenting = 4
 
 require dastest/testing_boost public
 require bison/lalr
+require bison/prec
 require daslib/strings_boost
 
 // `lhs ::= words`: a word starting with an upper-case letter is a rule, any other a terminal
@@ -319,4 +320,27 @@ def test_duplicate_actions(t : T?) {
     t |> success(ends_with(lines[0], " on y: reduce E ::= | reduce F ::= | reduce G ::="), lines[0])
     t |> success(ends_with(lines[1], " on q: reduce H ::= | reduce K ::="), lines[1])
     t |> success(ends_with(tb.first_conflict, " on y: reduce F ::="), tb.first_conflict)
+}
+
+[test(description = "lr_parse stops a cycle of primary reduces - the default keeps A ::= B, the earlier production, on the end of input - at the cap and refuses, and refuses the end-of-input id inside the token array as an unknown terminal")]
+def test_parse_edges(t : T?) {
+    {
+        var gb : LalrBuilder
+        prod(gb, "A", "B")
+        prod(gb, "S", "B")
+        prod(gb, "B", "A")
+        prod(gb, "B", "x")
+        let res <- resolve_precedence(build_lalr(gb, rule_id(gb, "S")), gb)
+        t |> equal(res.report.reduce_reduce, 1)
+        let r <- lr_parse(res.tables, tokens(gb, "x"))
+        t |> success(!r.ok)
+        t |> success(starts_with(r.err, "reduce loop in state "), r.err)
+        t |> equal(length(r.reductions), LR_MAX_REDUCES)
+    }
+    let gb <- expr_grammar()
+    let tb <- build_lalr(gb, gb.rule_index?["E"] ?? -1)
+    let r <- lr_parse(tb, [tid(gb, "id"), tb.eof, tid(gb, "+"), tid(gb, "id")])
+    t |> success(!r.ok)
+    t |> equal(r.pos, 1)
+    t |> equal(r.token, tb.eof)
 }

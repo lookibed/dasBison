@@ -24,6 +24,12 @@ def calc_lex(var lx : FlexLexer) : bool {
     rule("[\\-+*/()^<]") {
         lx |> emit(first_character(text(lx)))
     }
+    rule("@") {
+        lx |> emit(70000)
+    }
+    rule("#") {
+        lx |> emit(-5)
+    }
     rule("[ \\t\\r\\n]+") {
     }
 }
@@ -68,6 +74,55 @@ def test_calc_errors(t : T?) {
     t |> equal(p.err, "1:3: unexpected end of input, expected one of: '+', '-', '*', '/', ')'")
     t |> equal(p.line, 1)
     t |> equal(p.col, 3)
+}
+
+[test(description = "a token kind the grammar does not know - inside the kind map, past it, negative - is refused as token kind N; the end of input on a later line reports that line; a Parser opened again after a failure parses clean")]
+def test_runtime_edges(t : T?) {
+    let after_one = "expected one of: '+', '-', '*', '/', end of input"
+    t |> equal(run_parser(@@calc, "1^2"), "0 calc.txt:1:2: unexpected token kind 94, {after_one}")
+    t |> equal(run_parser(@@calc, "1@"), "0 calc.txt:1:2: unexpected token kind 70000, {after_one}")
+    t |> equal(run_parser(@@calc, "1#"), "0 calc.txt:1:2: unexpected token kind -5, {after_one}")
+    t |> equal(run_parser(@@calc, "1+\n\n  "),
+               "0 calc.txt:3:3: unexpected end of input, expected one of: '(', NUM")
+    var p : Parser
+    parser_open(p, "1+", "")
+    calc(p)
+    t |> success(p.failed)
+    parser_open(p, "2*3", "")
+    t |> equal(calc(p), 6.0)
+    t |> success(!p.failed)
+    t |> equal(p.err, "")
+}
+
+enum LoopTok {
+    X = 1
+}
+
+[flex]
+def loop_lex(var lx : FlexLexer) : bool {
+    rule("x") {
+        lx |> emit(LoopTok.X)
+    }
+}
+
+// A ::= B ::= A is a cycle: on the end of input the primary reduce runs A ::= B, then B ::= A,
+// forever, until the cap
+[bison(tokens = LoopTok, lexer = loop_lex)]
+def reduce_loop(var p : Parser) : int {
+    rule("A", "B") <| $(b : int) => b
+    rule("S", "B") <| $(b : int) => b
+    rule("B", "A")
+    rule("B", "X") <| $(x : FlexToken) => 1
+    root("S")
+}
+
+[test(description = "a grammar whose primary actions reduce in a cycle stops at the reduce cap and fails as a syntax error, the default value returned")]
+def test_reduce_loop(t : T?) {
+    var p : Parser
+    parser_open(p, "x")
+    t |> equal(reduce_loop(p), 0)
+    t |> success(p.failed)
+    t |> equal(p.err, "1:2: unexpected end of input, expected one of: ")
 }
 
 // `<` is non-associative below `+`, `^` right-associative above it
