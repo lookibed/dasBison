@@ -75,7 +75,7 @@ A packing like dasLR1's (`(prod * 4096 + dot) * 1024 + la`) collides once a prod
 4096 symbols or a grammar passes 1023 terminals, which integer terminals reach easily. State
 identity is the sorted list of kernel item ids.
 
-## Lookaheads and tables
+## Lookaheads and tables {#lookaheads}
 
 LR(0) kernels, then LALR(1) lookaheads by spontaneous generation and propagation (the dragon
 book's 4.7.5): each kernel item's closure is taken once with the marker `#`. The table step

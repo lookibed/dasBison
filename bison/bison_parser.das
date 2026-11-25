@@ -43,12 +43,13 @@ def bison_pop(var stack : array<auto(TT)>) : TT -const -& {
 }
 
 //! The terminal of token kind `kind` through the kind map, -2 for a kind the grammar does not know.
-def bison_terminal(kinds : array<int>; kind : int) : int =>
-    kind >= 0 && kind < length(kinds) ? kinds[kind] : -2
+def bison_terminal(kind_terms : array<int>; kind : int) : int =>
+    kind >= 0 && kind < length(kind_terms) ? kind_terms[kind] : -2
 
-//! The terminals some reduce chain ends in a shift or accept for, from the stack the refused token
-//! was read on (`states[0 .. low)` and `saved`, as `lr_keep_popped` keeps them), as `lr_parse`
-//! lists them: `action`, `goto_nt`, the left-hand side and length per production, the table sizes.
+//! The expected terminals of a refused token, from the stack it was read on (`states[0 .. low)`
+//! and `saved`) and the emitted tables: `action`, `goto_nt`, the left-hand side and length per
+//! production, the table sizes.
+[arch(at="../ARCHITECTURE.md#driver")]
 def bison_expected(action, goto_nt, lhs, len : array<int>; nterms, nrules : int;
                    states : array<int>; low : int; saved : array<int>) : array<int> {
     var inscope at_read <- lr_stack_at_read(states, low, saved)

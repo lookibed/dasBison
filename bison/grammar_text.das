@@ -42,7 +42,7 @@ struct TextPrec {
 struct TextGrammar {
     builder : LalrBuilder
     root : int = -1
-    kinds : array<int>          //!< per terminal: the token kind it stands for, -1 for a `%prec` name
+    term_kinds : array<int>     //!< per terminal: the token kind it stands for, -1 for a `%prec` name
     syms : array<array<TextSymbol>> //!< per production: its symbols as written
     err : string
     err_rule : int = -1         //!< the rule `err` is about, -1 when it is about no rule
@@ -145,10 +145,10 @@ def private kind_term(var g : TextGrammar; var by_kind : table<int; int>; name :
         return found
     }
     let id = term_id(g.builder, name)
-    if (id >= length(g.kinds)) {
-        g.kinds |> resize(id + 1)
+    if (id >= length(g.term_kinds)) {
+        g.term_kinds |> resize(id + 1)
     }
-    g.kinds[id] = kind
+    g.term_kinds[id] = kind
     by_kind[kind] = id
     return id
 }
@@ -172,8 +172,8 @@ def private prec_term(var g : TextGrammar; var by_kind : table<int; int>;
     let found = g.builder.term_index?[name] ?? -1
     return found if (found >= 0)
     let id = term_id(g.builder, name)
-    g.kinds |> resize(id + 1)
-    g.kinds[id] = -1
+    g.term_kinds |> resize(id + 1)
+    g.term_kinds[id] = -1
     return id
 }
 

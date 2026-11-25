@@ -68,7 +68,6 @@ class private ReturnScan : AstVisitor {
     }
 }
 
-//! marks every node of the driver generated, so the style lints skip the parser skeleton
 class private MarkGenerated : AstVisitor {
     def override preVisitExpression(var expr : ExpressionPtr) {
         expr.genFlags.generated = true
@@ -247,8 +246,6 @@ def private plan_values(var spec : BisonSpec; g : TextGrammar) : BisonValues {
     }
     return <- vals
 }
-
-// ===== emission =====
 
 def private int_table_global(name : string; vals : array<int>; at : LineInfo;
                              var errors : das_string) : bool {
@@ -481,13 +478,14 @@ def private make_arm(spec : BisonSpec; g : TextGrammar; vals : BisonValues; i, n
 
 //! the parser function's body: the value stacks, then the loop that reads a token when it needs
 //! one and shifts, reduces, accepts or fails on the table's action
+[arch(at="../ARCHITECTURE.md#macro-driver")]
 def private make_driver(spec : BisonSpec; g : TextGrammar; t : LalrTables; vals : BisonValues;
                         lexer : string; result_type : TypeDeclPtr; at : LineInfo) : ExpressionPtr {
     let p = spec.param
     let f = spec.func_name
     let g_action = "{f}`bison`action"
     let g_goto = "{f}`bison`goto"
-    let g_kinds = "{f}`bison`kinds"
+    let g_kind_terms = "{f}`bison`kind_terms"
     let g_names = "{f}`bison`names"
     let g_lhs = "{f}`bison`lhs"
     let g_len = "{f}`bison`len"
@@ -510,7 +508,7 @@ def private make_driver(spec : BisonSpec; g : TextGrammar; t : LalrTables; vals 
         while (true) {
             if (bison`term == -1) {
                 if ($c(lexer)($i(p).lexer)) {
-                    bison`term = bison_terminal($i(g_kinds), $i(p).lexer.tok.kind)
+                    bison`term = bison_terminal($i(g_kind_terms), $i(p).lexer.tok.kind)
                 } elif ($i(p).lexer.failed) {
                     bison_lexer_failed($i(p))
                     return <- bison`none
@@ -592,8 +590,8 @@ def private visible_enum(name : string) : tuple<en : Enumeration?; err : string>
 
 //! the members of enum `name` and their values, the token kinds; `err` when the module sees no
 //! such enum or several, or a member's value is not a constant the parse gives
-def private token_kinds(name : string) : tuple<kinds : table<string; int>; err : string> {
-    var res : tuple<kinds : table<string; int>; err : string>
+def private enum_kinds(name : string) : tuple<by_name : table<string; int>; err : string> {
+    var res : tuple<by_name : table<string; int>; err : string>
     let vis = visible_enum(name)
     if (vis.en == null) {
         res.err = vis.err
@@ -615,7 +613,7 @@ def private token_kinds(name : string) : tuple<kinds : table<string; int>; err :
             res.err = "[bison] tokens = {name}: {e.name} = {v} does not fit a token kind, an int"
             return <- res
         }
-        res.kinds[string(e.name)] = int(v)
+        res.by_name[string(e.name)] = int(v)
         next = v + 1l
     }
     return <- res
@@ -658,7 +656,7 @@ def private add_tables(spec : BisonSpec; g : TextGrammar; t : LalrTables; at : L
                        var errors : das_string) : bool {
     let f = spec.func_name
     var max_kind = -1
-    for (k in g.kinds) {
+    for (k in g.term_kinds) {
         max_kind = max(max_kind, k)
     }
     if (max_kind < 0) {
@@ -669,14 +667,14 @@ def private add_tables(spec : BisonSpec; g : TextGrammar; t : LalrTables; at : L
         errors := "[bison] token kind {max_kind} is past {BISON_MAX_KIND}, the largest the kind map holds"
         return false
     }
-    var kinds : array<int>
-    kinds |> resize(max_kind + 1)
-    for (k in kinds) {
+    var kind_terms : array<int>
+    kind_terms |> resize(max_kind + 1)
+    for (k in kind_terms) {
         k = -2
     }
-    for (term, k in count(), g.kinds) {
+    for (term, k in count(), g.term_kinds) {
         if (k >= 0) {
-            kinds[k] = term
+            kind_terms[k] = term
         }
     }
     var names := t.term_names
@@ -685,7 +683,7 @@ def private add_tables(spec : BisonSpec; g : TextGrammar; t : LalrTables; at : L
     let len <- [for (pr in t.prods); length(pr.rhs)]
     return (int_table_global("{f}`bison`action", t.action, at, errors)
         && int_table_global("{f}`bison`goto", t.goto_nt, at, errors)
-        && int_table_global("{f}`bison`kinds", kinds, at, errors)
+        && int_table_global("{f}`bison`kind_terms", kind_terms, at, errors)
         && string_table_global("{f}`bison`names", names, at, errors)
         && int_table_global("{f}`bison`lhs", lhs, at, errors)
         && int_table_global("{f}`bison`len", len, at, errors))
@@ -708,7 +706,7 @@ class BisonMacro : AstFunctionAnnotation {
         }
         let expected_arg = find_arg(args, "expected")
         let expected = expected_arg is tInt ? expected_arg as tInt : -1
-        let tk = token_kinds(tokens_name)
+        let tk = enum_kinds(tokens_name)
         if (!empty(tk.err)) {
             errors := tk.err
             return false
@@ -717,7 +715,7 @@ class BisonMacro : AstFunctionAnnotation {
         collect(spec, func.body as ExprBlock)
         return fail_rule(spec.err, spec.err_site, errors) if (!empty(spec.err))
         var inscope text_rules <- [for (r in spec.rules); TextRule(lhs = r.lhs, rhs = r.rhs)]
-        var g <- grammar_from_text(text_rules, spec.precs, spec.root, tk.kinds)
+        var g <- grammar_from_text(text_rules, spec.precs, spec.root, tk.by_name)
         if (!empty(g.err)) {
             let prec_site = g.err_prec >= 0 ? spec.prec_sites[g.err_prec] : null
             let site = g.err_rule >= 0 ? spec.rules[g.err_rule].site : prec_site

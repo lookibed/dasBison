@@ -53,8 +53,6 @@ struct LalrTables {
 
 let LALR_ACCEPT = 2147483647   //!< the end-of-input action that marks acceptance
 
-// ===== building =====
-
 //! A terminal id as a right-hand-side symbol.
 def term_sym(term : int) : int => term
 
@@ -99,8 +97,6 @@ def add_production(var gb : LalrBuilder; lhs : int; rhs : array<int>) {
     gb.prods |> emplace(p)
 }
 
-// ----- items and the canonical LR(0) collection -----
-
 struct private Item {
     prod : int
     dot : int
@@ -126,11 +122,10 @@ struct private Builder {
     first_want : int
 }
 
-//! Dense item id: one per (production, dot) pair, so `int` holds every item a grammar can have.
+//! the dense id of an item, one per (production, dot) pair
 def private item_id(b : Builder; it : Item) : int => b.item_base[it.prod] + it.dot
 
-//! An (item, lookahead) key: lookaheads span `0 .. nterms` (`nterms` is the propagation marker), so
-//! the product is exact in 64 bits for any grammar whose item count fits in `int`.
+[arch(at="../ARCHITECTURE.md#item-key")]
 def private item_la_key(b : Builder; it : Item; la : int) : int64 =>
     int64(item_id(b, it)) * int64(b.nterms + 1) + int64(la)
 
@@ -271,8 +266,6 @@ def private build_lr0(var b : Builder) {
     }
 }
 
-// ----- LALR(1) lookaheads: spontaneous generation and propagation (the dragon book's 4.7.5) -----
-
 struct private Prop {
     from_state : int
     from_item : int
@@ -319,6 +312,7 @@ def private closure1(b : Builder; it0 : Item; la0 : int) : array<tuple<it : Item
 //! The propagation marker (the dragon book's #) is the column past the end of input.
 def private hash_la(b : Builder) : int => b.nterms
 
+[arch(at="../ARCHITECTURE.md#lookaheads")]
 def private compute_lookaheads(var b : Builder) {
     var props : array<Prop>
     let hash = hash_la(b)
@@ -353,8 +347,6 @@ def private compute_lookaheads(var b : Builder) {
         }
     }
 }
-
-// ----- the tables -----
 
 //! `A ::= x y z` with rule and terminal names.
 def describe_prod(t : LalrTables; p : int) : string {
@@ -578,8 +570,6 @@ def describe_conflicts(t : LalrTables) : array<string> {
     return <- out
 }
 
-// ===== the deterministic driver =====
-
 //! What `lr_parse` found: acceptance, or where it stopped and what it would have taken there.
 struct LrParse {
     ok : bool
@@ -605,8 +595,7 @@ def private reduce_on(t : LalrTables; var stack : array<int>; p : int) : bool {
     return true
 }
 
-//! The most reductions `lr_parse` runs between two shifts; a cyclic grammar's primary actions could
-//! otherwise reduce forever.
+//! The most reductions `lr_parse` runs between two shifts.
 let LR_MAX_REDUCES = 1000000
 
 // whether `term` would be shifted or accepted from `stack` after its reduce chain
@@ -660,6 +649,7 @@ def lr_stack_at_read(stack : array<int>; low : int; saved : array<int>) : array<
 
 //! Run the tables over `tokens` (terminal ids, the end of input implied) with one stack, taking the
 //! primary action of a conflicting cell (`action`, never `alt`).
+[arch(at="../ARCHITECTURE.md#driver")]
 def lr_parse(t : LalrTables; tokens : array<int>) : LrParse {
     var res : LrParse
     if (!empty(t.err)) {

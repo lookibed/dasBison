@@ -250,7 +250,7 @@ def test_text_grammar(t : T?) {
                                 [TextRule(lhs = "e", rhs = "e '-' NUM"),
                                  TextRule(lhs = "e", rhs = "NUM")], precs, "", tokens)
     t |> equal(ok.err, "")
-    t |> equal(ok.kinds, ['-', 256])
+    t |> equal(ok.term_kinds, ['-', 256])
     t |> equal(ok.root, 0)
     let unknown <- grammar_from_text([TextRule(lhs = "e", rhs = "e NAME")], precs, "", tokens)
     t |> equal(unknown.err, "'NAME' is neither a rule nor a token")
@@ -277,7 +277,7 @@ def test_text_grammar(t : T?) {
                                     "", tokens)
     t |> equal(uminus.err, "")
     t |> equal(uminus.builder.prec_prods[0], uminus.builder.term_index?["UMINUS"] ?? -2)
-    t |> equal(uminus.kinds[uminus.builder.term_index?["UMINUS"] ?? 0], -1)
+    t |> equal(uminus.term_kinds[uminus.builder.term_index?["UMINUS"] ?? 0], -1)
 }
 
 [test(description = "a bare backslash or quote as a precedence argument is the token a right-hand side writes quoted and escaped, not a second name for its kind")]
@@ -288,7 +288,7 @@ def test_prec_escapes(t : T?) {
     let g <- grammar_from_text(rules, [TextPrec(assoc = PrecAssoc.left, names <- ["\\", "'"])], "",
                                tokens)
     t |> equal(g.err, "")
-    t |> equal(g.kinds, ['\\', '\'', 256])
+    t |> equal(g.term_kinds, ['\\', '\'', 256])
     t |> equal(g.builder.prec_terms[0].x, 1)
     t |> equal(g.builder.prec_terms[1].x, 1)
 }

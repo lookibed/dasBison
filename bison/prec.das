@@ -59,8 +59,6 @@ def prec_of_production(var gb : LalrBuilder; prod, term : int) {
     gb.prec_prods[prod] = term
 }
 
-// ===== resolution =====
-
 //! How `resolve_precedence` settled one conflicting cell.
 enum PrecHow {
     precedence  //!< precedence and associativity left one action
