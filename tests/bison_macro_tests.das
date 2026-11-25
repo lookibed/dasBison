@@ -9,6 +9,7 @@ require bison/prec
 require flex/flex_macro
 require daslib/strings_boost
 require _compile_issues
+require _bison_run
 
 enum CTok {
     NUM = 256
@@ -41,30 +42,24 @@ def calc(var p : Parser) : float {
     root("expr")
 }
 
-// the value, or on a failure the error text after the default value the parser returned
-def private run_calc(src : string) : string {
-    var p : Parser
-    parser_open(p, src, "calc.txt")
-    let v = calc(p)
-    return p.failed ? "{v} {p.err}" : "{v}"
-}
-
 [test(description = "the [bison] calculator evaluates by its %left lines: * binds tighter than +, - associates left, parentheses group")]
 def test_calc(t : T?) {
-    t |> equal(run_calc("1+2*3"), "7")
-    t |> equal(run_calc("(1+2)*3"), "9")
-    t |> equal(run_calc("2-3-4"), "-5")
-    t |> equal(run_calc("8/2/2"), "2")
-    t |> equal(run_calc(" 1.5 * (2 + 2) "), "6")
+    t |> equal(run_parser(@@calc, "1+2*3"), "7")
+    t |> equal(run_parser(@@calc, "(1+2)*3"), "9")
+    t |> equal(run_parser(@@calc, "2-3-4"), "-5")
+    t |> equal(run_parser(@@calc, "8/2/2"), "2")
+    t |> equal(run_parser(@@calc, " 1.5 * (2 + 2) "), "6")
 }
 
 [test(description = "a refused token gives file:line:col, its name and the exact expected set; the end of input and a lexer error report the same way, with the default value")]
 def test_calc_errors(t : T?) {
-    t |> equal(run_calc("1+"), "0 calc.txt:1:3: unexpected end of input, expected one of: '(', NUM")
-    t |> equal(run_calc("1 2"),
+    t |> equal(run_parser(@@calc, "1+"),
+               "0 calc.txt:1:3: unexpected end of input, expected one of: '(', NUM")
+    t |> equal(run_parser(@@calc, "1 2"),
                "0 calc.txt:1:3: unexpected NUM, expected one of: '+', '-', '*', '/', end of input")
-    t |> equal(run_calc("2*(3\n+)"), "0 calc.txt:2:2: unexpected ')', expected one of: '(', NUM")
-    t |> equal(run_calc("1 + x"), "0 calc.txt:1:5: unexpected 'x'")
+    t |> equal(run_parser(@@calc, "2*(3\n+)"),
+               "0 calc.txt:2:2: unexpected ')', expected one of: '(', NUM")
+    t |> equal(run_parser(@@calc, "1 + x"), "0 calc.txt:1:5: unexpected 'x'")
     var p : Parser
     parser_open(p, "(1", "")
     calc(p)

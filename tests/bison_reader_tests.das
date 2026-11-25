@@ -7,6 +7,7 @@ require strings
 require flex/flex_macro
 require bison/bison_macro
 require _compile_issues
+require _bison_run
 
 enum RTok {
     NUM = 256
@@ -51,23 +52,15 @@ expr : expr '+' expr          { $$ = $1 + $3 }
      ;
 %%
 
-// the value, or on a failure the error text after the default value the parser returned
-def private run_calc(src : string) : string {
-    var p : Parser
-    parser_open(p, src, "calc.txt")
-    let v = calc(p)
-    return p.failed ? "{v} {p.err}" : "{v}"
-}
-
 [test(description = "the %bison~ calculator evaluates by its %left and %right lines, %prec gives unary minus its level, and a refused token reports as [bison] does")]
 def test_calc(t : T?) {
-    t |> equal(run_calc("1+2*3"), "7")
-    t |> equal(run_calc("(1+2)*3"), "9")
-    t |> equal(run_calc("2-3-4"), "-5")
-    t |> equal(run_calc("-2*-(3+1)"), "8")
-    t |> equal(run_calc("1+"),
+    t |> equal(run_parser(@@calc, "1+2*3"), "7")
+    t |> equal(run_parser(@@calc, "(1+2)*3"), "9")
+    t |> equal(run_parser(@@calc, "2-3-4"), "-5")
+    t |> equal(run_parser(@@calc, "-2*-(3+1)"), "8")
+    t |> equal(run_parser(@@calc, "1+"),
                "0 calc.txt:1:3: unexpected end of input, expected one of: '-', '(', NUM")
-    t |> equal(run_calc("2*(3\n+)"),
+    t |> equal(run_parser(@@calc, "2*(3\n+)"),
                "0 calc.txt:2:2: unexpected ')', expected one of: '-', '(', NUM")
 }
 
