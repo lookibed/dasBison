@@ -242,3 +242,50 @@ def test_wide_grammar(t : T?) {
         t |> success(r.ok, r.err)
     }
 }
+
+[test(description = "a nullable rule lets FIRST and the lookaheads see past it, and FIRST reaches a rule through a chain declared after its user: S ::= A B c with B nullable takes a c, S ::= A C with C ::= B ::= y takes x y")]
+def test_nullable_first(t : T?) {
+    {
+        var gb : LalrBuilder
+        prod(gb, "S", "A B c")
+        prod(gb, "A", "a")
+        prod(gb, "B", "")
+        prod(gb, "B", "b")
+        let tb <- build_lalr(gb, rule_id(gb, "S"))
+        t |> equal(tb.err, "")
+        t |> equal(tb.conflicts, 0)
+        t |> success(lr_parse(tb, tokens(gb, "a c")).ok, "a c")
+        t |> success(lr_parse(tb, tokens(gb, "a b c")).ok, "a b c")
+    }
+    {
+        var gb : LalrBuilder
+        prod(gb, "S", "A C")
+        prod(gb, "C", "B")
+        prod(gb, "B", "y")
+        prod(gb, "A", "x")
+        let tb <- build_lalr(gb, rule_id(gb, "S"))
+        t |> equal(tb.err, "")
+        t |> success(lr_parse(tb, tokens(gb, "x y")).ok, "x y")
+    }
+    {
+        var gb : LalrBuilder
+        prod(gb, "S", "A D")
+        prod(gb, "D", "C")
+        prod(gb, "C", "B")
+        prod(gb, "B", "y")
+        prod(gb, "A", "x")
+        let tb <- build_lalr(gb, rule_id(gb, "S"))
+        t |> success(lr_parse(tb, tokens(gb, "x y")).ok,
+                     "x y through D ::= C ::= B, each declared after its user")
+    }
+    {
+        var gb : LalrBuilder
+        prod(gb, "S", "A D")
+        prod(gb, "D", "B c")
+        prod(gb, "A", "a")
+        prod(gb, "B", "")
+        prod(gb, "B", "b")
+        let tb <- build_lalr(gb, rule_id(gb, "S"))
+        t |> success(lr_parse(tb, tokens(gb, "a c")).ok, "FIRST(D) passes the nullable B")
+    }
+}
