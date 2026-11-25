@@ -43,30 +43,14 @@ def bison_pop(var stack : array<auto(TT)>) : TT -const -& {
 }
 
 //! The terminal of token kind `kind` through the kind map, -2 for a kind the grammar does not know.
-def bison_terminal(kinds : array<int>; kind : int) : int => kind >= 0 && kind < length(kinds) ? kinds[kind] : -2
-
-// whether `term` would be shifted or accepted from `stack` after its reduce chain
-def private bison_takes(action, goto_nt, lhs, len : array<int>; nterms, nrules : int; stack : array<int>;
-                        term : int) : bool {
-    var inscope probe := stack
-    for (_ in range(LR_MAX_REDUCES)) {
-        let a = action[probe[length(probe) - 1] * nterms + term]
-        return a > 0 if (a >= 0)
-        let p = -1 - a
-        let depth = length(probe) - len[p]
-        let to = goto_nt[probe[depth - 1] * nrules + lhs[p]]
-        return false if (to < 0)
-        probe |> resize(depth + 1)
-        probe[depth] = to
-    }
-    return false
-}
+def bison_terminal(kinds : array<int>; kind : int) : int =>
+    kind >= 0 && kind < length(kinds) ? kinds[kind] : -2
 
 //! The terminals some reduce chain from `stack` ends in a shift or accept for, as `lr_parse` lists
 //! them: `action`, `goto_nt`, the left-hand side and length per production, the table sizes.
 def bison_expected(action, goto_nt, lhs, len : array<int>; nterms, nrules : int;
                    stack : array<int>) : array<int> =>
-    <- [for (x in range(nterms)); x; where bison_takes(action, goto_nt, lhs, len, nterms, nrules, stack, x)]
+    <- lr_expected(action, goto_nt, lhs, len, nterms, nrules, stack)
 
 //! The lexer refused a byte: its error is the parser's.
 def bison_lexer_failed(var p : Parser) {
@@ -78,7 +62,8 @@ def bison_lexer_failed(var p : Parser) {
 
 //! The parser refused terminal `term` (`eof` at the end of input, -2 for a kind the grammar does
 //! not know): `file:line:col: unexpected TOKEN, expected one of: a, b, c`.
-def bison_syntax_error(var p : Parser; names : array<string>; term, eof : int; expected : array<int>) {
+def bison_syntax_error(var p : Parser; names : array<string>; term, eof : int;
+                       expected : array<int>) {
     p.failed = true
     let at_end = term == eof
     p.line = at_end ? p.lexer.line : p.lexer.tok.line

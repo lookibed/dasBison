@@ -12,8 +12,9 @@ dasFlex's runtime module `flex/flex`, the only package dasBison requires.
 
 - `bison/lalr.das` - the core: `LalrBuilder` (`term_id`, `declare_terms`, `rule_id`,
   `add_production`, `term_sym`, `rule_sym`), `build_lalr` and its result `LalrTables`, the
-  conflict report (`describe_conflicts`, `describe_prod`, `describe_action`), and the driver
-  (`lr_parse`, `LrParse`). Knows nothing of bytes or text. `LalrBuilder.prec_terms` and
+  conflict report (`describe_conflicts`, `describe_prod`, `describe_action`), the driver
+  (`lr_parse`, `LrParse`), and `lr_expected`, the expected-set walk over flat tables that
+  `lr_parse` and a `[bison]` parser both call. Knows nothing of bytes or text. `LalrBuilder.prec_terms` and
   `prec_prods` hold the precedence declarations; only `bison/prec.das` writes or reads them.
 - `bison/prec.das` - the precedence layer: the declarations (`prec_left`, `prec_right`,
   `prec_nonassoc`, `prec_of_production`), `resolve_precedence` and its `PrecResult` /

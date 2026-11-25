@@ -606,16 +606,30 @@ def private reduce_on(t : LalrTables; var stack : array<int>; p : int) : bool {
 //! otherwise reduce forever.
 let LR_MAX_REDUCES = 1000000
 
-// whether `term` would be shifted (or accepted) from `stack` after its reduce chain
-def private takes(t : LalrTables; stack : array<int>; term : int) : bool {
-    var probe := stack
+// whether `term` would be shifted or accepted from `stack` after its reduce chain
+def private lr_takes(action, goto_nt, lhs, len : array<int>; nterms, nrules : int;
+                     stack : array<int>; term : int) : bool {
+    var inscope probe := stack
     for (_ in range(LR_MAX_REDUCES)) {
-        let a = cell_action(t, probe[length(probe) - 1], term)
+        let a = action[probe[length(probe) - 1] * nterms + term]
         return a > 0 if (a >= 0)
-        return false if (!reduce_on(t, probe, -1 - a))
+        let p = -1 - a
+        let depth = length(probe) - len[p]
+        let to = goto_nt[probe[depth - 1] * nrules + lhs[p]]
+        return false if (to < 0)
+        probe |> resize(depth + 1)
+        probe[depth] = to
     }
     return false
 }
+
+//! The terminals some reduce chain from `stack` ends in a shift or accept for, ascending: the
+//! tables as flat arrays (`action`, `goto_nt`, the left-hand side and length of every production,
+//! `nterms`, `nrules`), so `lr_parse` and a `[bison]` parser's emitted globals share one walk.
+def lr_expected(action, goto_nt, lhs, len : array<int>; nterms, nrules : int;
+                stack : array<int>) : array<int> =>
+    <- [for (x in range(nterms)); x;
+        where lr_takes(action, goto_nt, lhs, len, nterms, nrules, stack, x)]
 
 //! Run the tables over `tokens` (terminal ids, the end of input implied) with one stack, taking the
 //! primary action of a conflicting cell (`action`, never `alt`).
@@ -652,7 +666,9 @@ def lr_parse(t : LalrTables; tokens : array<int>) : LrParse {
             res.pos = pos
             res.state = top
             res.token = term
-            res.expected <- [for (x in range(t.nterms)); x; where takes(t, stack, x)]
+            var inscope lhs <- [for (pr in t.prods); pr.lhs]
+            var inscope len <- [for (pr in t.prods); length(pr.rhs)]
+            res.expected <- lr_expected(t.action, t.goto_nt, lhs, len, t.nterms, t.nrules, stack)
             let why = a < 0 ? "reduce loop" : "unexpected terminal {term}"
             res.err = "{why} in state {top}"
             return <- res
