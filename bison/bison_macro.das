@@ -75,6 +75,16 @@ class private MarkGenerated : AstVisitor {
     }
 }
 
+def private mark_generated(var body : ExpressionPtr) {
+    var marker = new MarkGenerated()
+    make_visitor(*marker) $(adapter) {
+        visit_expression(body, adapter)
+    }
+    unsafe {
+        delete marker
+    }
+}
+
 //! whether an action yields a value: its declared result type, else a `return <value>` in it
 def private block_yields(var blk : ExprBlock?) : bool {
     if (blk.returnType != null && !blk.returnType.isAuto) {
@@ -141,9 +151,11 @@ def private collect(var spec : BisonSpec; body : ExprBlock?) {
         let call = st as ExprCall
         if (call.name == "rule") {
             collect_rule(spec, call)
-        } elif (call.name == "prec_left" || call.name == "prec_right" || call.name == "prec_nonassoc") {
+        } elif (call.name == "prec_left" || call.name == "prec_right"
+                || call.name == "prec_nonassoc") {
             collect_prec(spec, call)
-        } elif (call.name == "root" && length(call.arguments) == 1 && call.arguments[0] is ExprConstString) {
+        } elif (call.name == "root" && length(call.arguments) == 1
+                && call.arguments[0] is ExprConstString) {
             spec.root = string((call.arguments[0] as ExprConstString).value)
         } else {
             fail_at(spec, "only rule, prec_left, prec_right, prec_nonassoc and root calls belong in a [bison] body, not {call.name}", call)
@@ -159,7 +171,8 @@ struct private BisonValues {
     values : array<array<int>>      //!< per production: the right-hand-side positions that carry values
 }
 
-def private rule_name(spec : BisonSpec; i : int) : string => "rule(\"{spec.rules[i].lhs}\", \"{spec.rules[i].rhs}\")"
+def private rule_name(spec : BisonSpec; i : int) : string =>
+    "rule(\"{spec.rules[i].lhs}\", \"{spec.rules[i].rhs}\")"
 
 // per production: which symbols carry a value - named tokens and rules that yield
 def private value_positions(spec : BisonSpec; g : TextGrammar; var vals : BisonValues) {
@@ -228,7 +241,8 @@ def private plan_values(var spec : BisonSpec; g : TextGrammar) : BisonValues {
 
 // ===== emission =====
 
-def private int_table_global(name : string; vals : array<int>; at : LineInfo; var errors : das_string) : bool {
+def private int_table_global(name : string; vals : array<int>; at : LineInfo;
+                             var errors : das_string) : bool {
     var mkArr = new ExprMakeArray(at = at, makeType <- typeinfo ast_typedecl(type<int>))
     for (v in vals) {
         mkArr.values |> emplace_new <| new ExprConstInt(at = at, value = v)
@@ -243,7 +257,8 @@ def private int_table_global(name : string; vals : array<int>; at : LineInfo; va
     return true
 }
 
-def private string_table_global(name : string; vals : array<string>; at : LineInfo; var errors : das_string) : bool {
+def private string_table_global(name : string; vals : array<string>; at : LineInfo;
+                                var errors : das_string) : bool {
     var mkArr = new ExprMakeArray(at = at, makeType <- typeinfo ast_typedecl(type<string>))
     for (v in vals) {
         mkArr.values |> emplace_new <| new ExprConstString(at = at, value := v)
@@ -266,7 +281,8 @@ def private stack_name(r : int) : string => "bison`v`{r}"
 
 //! production `i`'s action as a private function: the parser, then the action's arguments, each
 //! `var` - the value is the action's own, popped off its stack
-def private add_action(spec : BisonSpec; i : int; parser_type : TypeDeclPtr; var errors : das_string) : bool {
+def private add_action(spec : BisonSpec; i : int; parser_type : TypeDeclPtr;
+                       var errors : das_string) : bool {
     let r & = unsafe(spec.rules[i])
     let at = r.site.at
     var fn <- new Function(at = at, atDecl = at, name := action_name(spec, i),
@@ -280,7 +296,10 @@ def private add_action(spec : BisonSpec; i : int; parser_type : TypeDeclPtr; var
         fn.arguments |> emplace(arg)
     }
     let declared = r.action.returnType != null && !r.action.returnType.isAuto
-    fn.result = declared ? clone_type(r.action.returnType) : new TypeDecl(at = at, baseType = r.yields ? Type.autoinfer : Type.tVoid, flags = TypeDeclFlags.removeConstant | TypeDeclFlags.removeRef)
+    let inferred = r.yields ? Type.autoinfer : Type.tVoid
+    fn.result = declared ? clone_type(r.action.returnType) : new TypeDecl(at = at,
+        baseType = inferred,
+        flags = TypeDeclFlags.removeConstant | TypeDeclFlags.removeRef)
     var body = clone_expression(r.action) as ExprBlock
     body.arguments |> clear
     body.returnType = null
@@ -295,7 +314,8 @@ def private add_action(spec : BisonSpec; i : int; parser_type : TypeDeclPtr; var
 
 //! a call to production `i`'s action: on the parser and on `args`, or with `for_type` on default
 //! values of the action's argument types (a call `typedecl` reads and never runs)
-def private action_call(spec : BisonSpec; i : int; args : array<string>; for_type : bool; at : LineInfo) : ExpressionPtr {
+def private action_call(spec : BisonSpec; i : int; args : array<string>; for_type : bool;
+                        at : LineInfo) : ExpressionPtr {
     var call = new ExprCall(at = at, name := action_name(spec, i))
     call.arguments |> emplace_new <| new ExprVar(at = at, name := spec.param)
     if (!for_type) {
@@ -318,7 +338,8 @@ def private action_call(spec : BisonSpec; i : int; args : array<string>; for_typ
 
 //! the value stacks: a token stack, and one `array<T>` per rule that yields, `T` the type its first
 //! action returns; every other action and pass-through of the rule is checked against it
-def private make_stacks(spec : BisonSpec; vals : BisonValues; at : LineInfo) : array<ExpressionPtr> {
+def private make_stacks(spec : BisonSpec; vals : BisonValues;
+                        at : LineInfo) : array<ExpressionPtr> {
     var out : array<ExpressionPtr>
     let none : array<string>
     for (r, k in count(), vals.rule_action) {
@@ -334,7 +355,8 @@ def private make_stacks(spec : BisonSpec; vals : BisonValues; at : LineInfo) : a
 
 //! the type checks a typed stack cannot make itself readable: every action of a rule returns the
 //! type of its first, a pass-through passes a value of the rule's type
-def private make_type_checks(spec : BisonSpec; g : TextGrammar; vals : BisonValues) : array<ExpressionPtr> {
+def private make_type_checks(spec : BisonSpec; g : TextGrammar;
+                             vals : BisonValues) : array<ExpressionPtr> {
     var out : array<ExpressionPtr>
     let none : array<string>
     for (i, rl in count(), spec.rules) {
@@ -360,7 +382,8 @@ def private make_type_checks(spec : BisonSpec; g : TextGrammar; vals : BisonValu
 
 //! the pops of production `i`'s right-hand side, last symbol first: a value the action takes into
 //! `bison`a<position>`, any other value and every token dropped
-def private make_pops(vals : BisonValues; prod : Production; i : int; pass_args : bool) : array<ExpressionPtr> {
+def private make_pops(vals : BisonValues; prod : Production; i : int;
+                      pass_args : bool) : array<ExpressionPtr> {
     var pops : array<ExpressionPtr>
     let nrhs = length(prod.rhs)
     for (k in range(nrhs)) {
@@ -385,7 +408,8 @@ def private make_pops(vals : BisonValues; prod : Production; i : int; pass_args 
 
 //! production `i`'s value: its action's result, the one value passed on, or the action run for its
 //! effect; pushed on the stack of `lhs` when the rule yields
-def private make_reduce(spec : BisonSpec; vals : BisonValues; i, lhs : int; args : array<string>; at : LineInfo) : array<ExpressionPtr> {
+def private make_reduce(spec : BisonSpec; vals : BisonValues; i, lhs : int; args : array<string>;
+                        at : LineInfo) : array<ExpressionPtr> {
     let rl & = unsafe(spec.rules[i])
     let lhs_stack = stack_name(lhs)
     var reduce : array<ExpressionPtr>
@@ -411,7 +435,8 @@ def private make_reduce(spec : BisonSpec; vals : BisonValues; i, lhs : int; args
 
 //! the reduce by production `i` (table production `i + 1`): pop its states and values, run the
 //! action or pass the one value on, push the result and the goto state
-def private make_arm(spec : BisonSpec; g : TextGrammar; vals : BisonValues; i, nrules : int; g_goto : string) : ExpressionPtr {
+def private make_arm(spec : BisonSpec; g : TextGrammar; vals : BisonValues; i, nrules : int;
+                     g_goto : string) : ExpressionPtr {
     let rl & = unsafe(spec.rules[i])
     let at = rl.site.at
     let prod & = unsafe(g.builder.prods[i])
@@ -444,8 +469,8 @@ def private make_arm(spec : BisonSpec; g : TextGrammar; vals : BisonValues; i, n
 
 //! the parser function's body: the value stacks, then the loop that reads a token when it needs
 //! one and shifts, reduces, accepts or fails on the table's action
-def private make_driver(spec : BisonSpec; g : TextGrammar; t : LalrTables; vals : BisonValues; lexer : string;
-                        result_type : TypeDeclPtr; at : LineInfo) : ExpressionPtr {
+def private make_driver(spec : BisonSpec; g : TextGrammar; t : LalrTables; vals : BisonValues;
+                        lexer : string; result_type : TypeDeclPtr; at : LineInfo) : ExpressionPtr {
     let p = spec.param
     let f = spec.func_name
     let g_action = "{f}`bison`action"
@@ -454,25 +479,22 @@ def private make_driver(spec : BisonSpec; g : TextGrammar; t : LalrTables; vals 
     let g_names = "{f}`bison`names"
     let g_lhs = "{f}`bison`lhs"
     let g_len = "{f}`bison`len"
-    let accept = LALR_ACCEPT
-    let max_reduces = LR_MAX_REDUCES
-    let nterms = t.nterms
-    let nrules = t.nrules
-    let eof = t.eof
     let root_stack = stack_name(g.root)
     var stacks <- make_stacks(spec, vals, at)
     var checks <- make_type_checks(spec, g, vals)
-    var arms <- [for (i in range(length(spec.rules))); make_arm(spec, g, vals, i, nrules, g_goto)]
+    var arms <- [for (i in range(length(spec.rules))); make_arm(spec, g, vals, i, t.nrules, g_goto)]
     var rtype <- clone_type(result_type)
     var head <- qmacro_block_to_array() {
         var bison`none : $t(rtype)
         var bison`states : array<int>
         var bison`toks : array<FlexToken>
+        var bison`saved : array<int>
     }
     var run <- qmacro_block_to_array() {
         bison`states |> push(0)
         var bison`term = -1
         var bison`reduces = 0
+        var bison`low = 0
         while (true) {
             if (bison`term == -1) {
                 if ($c(lexer)($i(p).lexer)) {
@@ -481,29 +503,38 @@ def private make_driver(spec : BisonSpec; g : TextGrammar; t : LalrTables; vals 
                     bison_lexer_failed($i(p))
                     return <- bison`none
                 } else {
-                    bison`term = $v(eof)
+                    bison`term = $v(t.eof)
                 }
+                bison`low = length(bison`states)
+                bison`saved |> clear()
             }
             let bison`top = bison`states[length(bison`states) - 1]
-            let bison`act = bison`term >= 0 ? $i(g_action)[bison`top * $v(nterms) + bison`term] : 0
-            if (bison`act > 0 && bison`act != $v(accept)) {
+            let bison`act = bison`term >= 0 ? $i(g_action)[bison`top * $v(t.nterms) + bison`term] : 0
+            if (bison`act > 0 && bison`act != $v(LALR_ACCEPT)) {
                 bison`states |> push(bison`act - 1)
                 bison`toks |> push($i(p).lexer.tok)
                 bison`term = -1
                 bison`reduces = 0
                 continue
             }
-            if (bison`act == $v(accept)) {
+            if (bison`act == $v(LALR_ACCEPT)) {
                 var bison`root = bison_pop($i(root_stack))
                 return <- bison`root
             }
-            if (bison`act == 0 || bison`reduces >= $v(max_reduces)) {
-                bison_syntax_error($i(p), $i(g_names), bison`term, $v(eof),
-                                   bison_expected($i(g_action), $i(g_goto), $i(g_lhs), $i(g_len), $v(nterms), $v(nrules), bison`states))
+            if (bison`act == 0 || bison`reduces >= $v(LR_MAX_REDUCES)) {
+                bison_syntax_error($i(p), $i(g_names), bison`term, $v(t.eof),
+                                   bison_expected($i(g_action), $i(g_goto), $i(g_lhs), $i(g_len),
+                                                  $v(t.nterms), $v(t.nrules),
+                                                  bison`states, bison`low, bison`saved))
                 return <- bison`none
             }
             bison`reduces++
             let bison`prod = -1 - bison`act
+            let bison`depth = length(bison`states) - $i(g_len)[bison`prod]
+            while (bison`low > bison`depth) {
+                bison`low--
+                bison`saved |> push(bison`states[bison`low])
+            }
             $b(arms)
         }
     }
@@ -513,13 +544,7 @@ def private make_driver(spec : BisonSpec; g : TextGrammar; t : LalrTables; vals 
             (body as ExprBlock).list |> push(e)
         }
     }
-    var marker = new MarkGenerated()
-    make_visitor(*marker) $(adapter) {
-        visit_expression(body, adapter)
-    }
-    unsafe {
-        delete marker
-    }
+    mark_generated(body)
     return body
 }
 
@@ -578,7 +603,8 @@ let private BISON_MAX_KIND = 65535
 
 //! the private globals the driver reads: the tables, the kind map, the terminal names, and the
 //! left-hand side and length of every table production
-def private add_tables(spec : BisonSpec; g : TextGrammar; t : LalrTables; at : LineInfo; var errors : das_string) : bool {
+def private add_tables(spec : BisonSpec; g : TextGrammar; t : LalrTables; at : LineInfo;
+                       var errors : das_string) : bool {
     let f = spec.func_name
     var max_kind = -1
     for (k in g.kinds) {
@@ -612,7 +638,8 @@ def private add_tables(spec : BisonSpec; g : TextGrammar; t : LalrTables; at : L
 
 [function_macro(name="bison")]
 class BisonMacro : AstFunctionAnnotation {
-    def override apply(var func : FunctionPtr; var group : ModuleGroup; var args : AnnotationArgumentList;
+    def override apply(var func : FunctionPtr; var group : ModuleGroup;
+                       var args : AnnotationArgumentList;
                        var errors : das_string) : bool {
         if (length(func.arguments) != 1) {
             errors := "[bison] takes one argument: var p : Parser"
@@ -637,7 +664,8 @@ class BisonMacro : AstFunctionAnnotation {
         var inscope text_rules <- [for (r in spec.rules); TextRule(lhs = r.lhs, rhs = r.rhs)]
         var g <- grammar_from_text(text_rules, spec.precs, spec.root, tk.kinds)
         if (!empty(g.err)) {
-            let site = g.err_rule >= 0 ? spec.rules[g.err_rule].site : (g.err_prec >= 0 ? spec.prec_sites[g.err_prec] : null)
+            let prec_site = g.err_prec >= 0 ? spec.prec_sites[g.err_prec] : null
+            let site = g.err_rule >= 0 ? spec.rules[g.err_rule].site : prec_site
             return fail_rule("[bison] {g.err}", site, errors)
         }
         let built <- build_lalr(g.builder, g.root)

@@ -46,11 +46,14 @@ def bison_pop(var stack : array<auto(TT)>) : TT -const -& {
 def bison_terminal(kinds : array<int>; kind : int) : int =>
     kind >= 0 && kind < length(kinds) ? kinds[kind] : -2
 
-//! The terminals some reduce chain from `stack` ends in a shift or accept for, as `lr_parse` lists
-//! them: `action`, `goto_nt`, the left-hand side and length per production, the table sizes.
+//! The terminals some reduce chain ends in a shift or accept for, from the stack the refused token
+//! was read on (`states[0 .. low)` and `saved`, as `lr_keep_popped` keeps them), as `lr_parse`
+//! lists them: `action`, `goto_nt`, the left-hand side and length per production, the table sizes.
 def bison_expected(action, goto_nt, lhs, len : array<int>; nterms, nrules : int;
-                   stack : array<int>) : array<int> =>
-    <- lr_expected(action, goto_nt, lhs, len, nterms, nrules, stack)
+                   states : array<int>; low : int; saved : array<int>) : array<int> {
+    var inscope at_read <- lr_stack_at_read(states, low, saved)
+    return <- lr_expected(action, goto_nt, lhs, len, nterms, nrules, at_read)
+}
 
 //! The lexer refused a byte: its error is the parser's.
 def bison_lexer_failed(var p : Parser) {

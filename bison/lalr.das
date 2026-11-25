@@ -584,7 +584,8 @@ struct LrParse {
     pos : int                   //!< the refused token's index; `length(tokens)` at the end of input
     state : int                 //!< the state that refused it
     token : int                 //!< the refused terminal id (`eof` at the end of input)
-    expected : array<int>       //!< terminal ids the parser would have taken at `pos`, ascending
+    expected : array<int>       //!< terminal ids the parser would have taken at `pos`, ascending,
+                                //!< from the stack the refused token was read on
     reductions : array<int>     //!< the productions reduced, in order (indexes into `prods`)
     err : string
 }
@@ -631,6 +632,30 @@ def lr_expected(action, goto_nt, lhs, len : array<int>; nterms, nrules : int;
     <- [for (x in range(nterms)); x;
         where lr_takes(action, goto_nt, lhs, len, nterms, nrules, stack, x)]
 
+//! Before a reduce cuts `stack` down to `depth`: every state under `low` the cut removes goes to
+//! `saved`, last removed first, and `low` follows the cut. `low` is `length(stack)` and `saved`
+//! empty when a token is read, so `stack[0 .. low)` and `saved` keep the stack it was read on.
+def lr_keep_popped(stack : array<int>; var low : int&; var saved : array<int>; depth : int) {
+    while (low > depth) {
+        low--
+        saved |> push(stack[low])
+    }
+}
+
+//! The state stack as it stood when the current token was read: `stack[0 .. low)`, then the
+//! states `lr_keep_popped` saved, in stack order.
+def lr_stack_at_read(stack : array<int>; low : int; saved : array<int>) : array<int> {
+    var out : array<int>
+    out |> reserve(low + length(saved))
+    for (i in range(low)) {
+        out |> push(stack[i])
+    }
+    for (k in range(length(saved))) {
+        out |> push(saved[length(saved) - 1 - k])
+    }
+    return <- out
+}
+
 //! Run the tables over `tokens` (terminal ids, the end of input implied) with one stack, taking the
 //! primary action of a conflicting cell (`action`, never `alt`).
 def lr_parse(t : LalrTables; tokens : array<int>) : LrParse {
@@ -643,6 +668,8 @@ def lr_parse(t : LalrTables; tokens : array<int>) : LrParse {
     stack |> push(0)
     var pos = 0
     var reduces = 0
+    var low = 1
+    var saved : array<int>
     while (true) {
         let term = pos < length(tokens) ? tokens[pos] : t.eof
         let top = stack[length(stack) - 1]
@@ -655,9 +682,12 @@ def lr_parse(t : LalrTables; tokens : array<int>) : LrParse {
             stack |> push(a - 1)
             pos++
             reduces = 0
+            low = length(stack)
+            saved |> clear()
         } elif (a < 0 && reduces < LR_MAX_REDUCES) {
             res.reductions |> push(-1 - a)
             reduces++
+            lr_keep_popped(stack, low, saved, length(stack) - length(t.prods[-1 - a].rhs))
             if (!reduce_on(t, stack, -1 - a)) {
                 res.err = "no goto after reducing {describe_prod(t, -1 - a)}"
                 return <- res
@@ -668,7 +698,8 @@ def lr_parse(t : LalrTables; tokens : array<int>) : LrParse {
             res.token = term
             var inscope lhs <- [for (pr in t.prods); pr.lhs]
             var inscope len <- [for (pr in t.prods); length(pr.rhs)]
-            res.expected <- lr_expected(t.action, t.goto_nt, lhs, len, t.nterms, t.nrules, stack)
+            var inscope at_read <- lr_stack_at_read(stack, low, saved)
+            res.expected <- lr_expected(t.action, t.goto_nt, lhs, len, t.nterms, t.nrules, at_read)
             let why = a < 0 ? "reduce loop" : "unexpected terminal {term}"
             res.err = "{why} in state {top}"
             return <- res

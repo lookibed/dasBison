@@ -85,6 +85,29 @@ def test_expression_grammar(t : T?) {
     }
 }
 
+// LALR merges the states after `a c` and `b c`, so `E ::= c` reduces on both `x` and `y` there
+def private merged_lookaheads() : LalrBuilder {
+    var gb : LalrBuilder
+    prod(gb, "S", "a E x")
+    prod(gb, "S", "b E y")
+    prod(gb, "E", "c")
+    prod(gb, "E", "c z")
+    return <- gb
+}
+
+[test(description = "the expected set is the one of the stack the refused token was read on: after a merged state reduces on the doomed token, a terminal the reduce made unreachable stays expected")]
+def test_expected_before_reduce(t : T?) {
+    let gb <- merged_lookaheads()
+    let tb <- build_lalr(gb, gb.rule_index?["S"] ?? -1)
+    t |> equal(tb.err, "")
+    let r <- lr_parse(tb, tokens(gb, "a c y"))
+    t |> success(!r.ok)
+    t |> equal(r.pos, 2)
+    t |> equal(r.token, tid(gb, "y"))
+    t |> equal(describe_prod(tb, r.reductions[0]), "E ::= c")
+    t |> equal(r.expected, [tid(gb, "x"), tid(gb, "z")])
+}
+
 [test(description = "the dangling else keeps exactly one shift/reduce cell, both actions in it, and the primary shift binds else to the inner if")]
 def test_dangling_else(t : T?) {
     let gb <- dangling_else()

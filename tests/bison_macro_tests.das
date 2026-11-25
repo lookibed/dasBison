@@ -60,7 +60,8 @@ def test_calc(t : T?) {
 [test(description = "a refused token gives file:line:col, its name and the exact expected set; the end of input and a lexer error report the same way, with the default value")]
 def test_calc_errors(t : T?) {
     t |> equal(run_calc("1+"), "0 calc.txt:1:3: unexpected end of input, expected one of: '(', NUM")
-    t |> equal(run_calc("1 2"), "0 calc.txt:1:3: unexpected NUM, expected one of: '+', '-', '*', '/', end of input")
+    t |> equal(run_calc("1 2"),
+               "0 calc.txt:1:3: unexpected NUM, expected one of: '+', '-', '*', '/', end of input")
     t |> equal(run_calc("2*(3\n+)"), "0 calc.txt:2:2: unexpected ')', expected one of: '(', NUM")
     t |> equal(run_calc("1 + x"), "0 calc.txt:1:5: unexpected 'x'")
     var p : Parser
@@ -98,12 +99,66 @@ def if_lex(var lx : FlexLexer) : bool {
 [bison(tokens = ITok, lexer = if_lex, expected = 1)]
 def ifs(var p : Parser) : string {
     rule("stmt", "IF stmt") <| $(i : FlexToken; s : string) => "if({s})"
-    rule("stmt", "IF stmt ELSE stmt") <| $(i : FlexToken; a : string; e : FlexToken; b : string) => "if({a}, {b})"
+    rule("stmt", "IF stmt ELSE stmt") <| $(i : FlexToken; a : string; e : FlexToken;
+                                           b : string) => "if({a}, {b})"
     rule("stmt", "X") <| $() => "x"
 }
 
+enum MTok {
+    A = 1
+    B
+    C
+    X
+    Y
+    Z
+}
+
+[flex]
+def merged_lex(var lx : FlexLexer) : bool {
+    rule("a") {
+        lx |> emit(MTok.A)
+    }
+    rule("b") {
+        lx |> emit(MTok.B)
+    }
+    rule("c") {
+        lx |> emit(MTok.C)
+    }
+    rule("x") {
+        lx |> emit(MTok.X)
+    }
+    rule("y") {
+        lx |> emit(MTok.Y)
+    }
+    rule("z") {
+        lx |> emit(MTok.Z)
+    }
+    rule(" +") {
+    }
+}
+
+// LALR merges the states after `a c` and `b c`, so `E ::= C` reduces on both X and Y there
+[bison(tokens = MTok, lexer = merged_lex)]
+def merged(var p : Parser) : int {
+    rule("S", "A E X") <| $() => 1
+    rule("S", "B E Y") <| $() => 2
+    rule("E", "C")
+    rule("E", "C Z")
+}
+
+[test(description = "the [bison] expected set is the one of the stack the refused token was read on: the reduce a merged state runs on the doomed token does not drop a terminal valid when it was read")]
+def test_expected_before_reduce(t : T?) {
+    var p : Parser
+    parser_open(p, "a c z x")
+    t |> equal(merged(p), 1)
+    parser_open(p, "a c y")
+    merged(p)
+    t |> equal(p.err, "1:5: unexpected Y, expected one of: X, Z")
+}
+
 def private dangling_else() : TextGrammar {
-    let rules <- [TextRule(lhs = "stmt", rhs = "IF stmt"), TextRule(lhs = "stmt", rhs = "IF stmt ELSE stmt"),
+    let rules <- [TextRule(lhs = "stmt", rhs = "IF stmt"),
+                  TextRule(lhs = "stmt", rhs = "IF stmt ELSE stmt"),
                   TextRule(lhs = "stmt", rhs = "X")]
     let precs : array<TextPrec>
     let tokens <- { "IF" => 1, "ELSE" => 2, "X" => 3 }
@@ -124,7 +179,8 @@ def test_dangling_else(t : T?) {
     let warning = "[bison] ifs: 1 shift/reduce, 0 reduce/reduce conflicts, resolved by default:\nState 4 conflicts: 1 shift/reduce\n    ELSE  shift, and go to state 5\n    ELSE  [reduce using rule 1 (stmt ::= IF stmt)]\n"
     t |> equal(conflict_warning("ifs", res.report, -1), warning)
     t |> equal(conflict_warning("ifs", res.report, 1), "")
-    t |> equal(conflict_warning("ifs", res.report, 0), replace(warning, "conflicts, resolved", "conflicts (expected = 0), resolved"))
+    t |> equal(conflict_warning("ifs", res.report, 0),
+               replace(warning, "conflicts, resolved", "conflicts (expected = 0), resolved"))
 }
 
 [test(description = "a right-hand side reads names, quoted characters with escapes and a trailing %prec, and names what is wrong with a bad one")]
@@ -138,34 +194,46 @@ def test_rhs_text(t : T?) {
     t |> equal(parse_rhs("'\\'' '\\\\'").syms[0].ch, '\'')
     t |> equal(parse_rhs("'\\'' '\\\\'").syms[1].ch, '\\')
     t |> equal(length(parse_rhs("").syms), 0)
-    t |> equal(parse_rhs("a 'bc'").err, "a quoted character is one character between single quotes, at offset 2")
+    t |> equal(parse_rhs("a 'bc'").err,
+               "a quoted character is one character between single quotes, at offset 2")
     t |> equal(parse_rhs("a %prec").err, "%prec needs a token name")
     t |> equal(parse_rhs("a %prec X b").err, "'b' after %prec X: %prec ends the right-hand side")
-    t |> equal(parse_rhs("a + b").err, "unexpected '+' at offset 2: a symbol is a name or a quoted character")
+    t |> equal(parse_rhs("a + b").err,
+               "unexpected '+' at offset 2: a symbol is a name or a quoted character")
 }
 
 [test(description = "a text grammar resolves names to rules, tokens and quoted bytes, keys terminals by kind, and refuses an unknown name, a kind two names share, and a root that is no rule")]
 def test_text_grammar(t : T?) {
     let tokens <- { "NUM" => 256, "PLUS" => '+' }
     let precs : array<TextPrec>
-    let ok <- grammar_from_text([TextRule(lhs = "e", rhs = "e '-' NUM"), TextRule(lhs = "e", rhs = "NUM")], precs, "", tokens)
+    let ok <- grammar_from_text(
+                                [TextRule(lhs = "e", rhs = "e '-' NUM"),
+                                 TextRule(lhs = "e", rhs = "NUM")], precs, "", tokens)
     t |> equal(ok.err, "")
     t |> equal(ok.kinds, ['-', 256])
     t |> equal(ok.root, 0)
     let unknown <- grammar_from_text([TextRule(lhs = "e", rhs = "e NAME")], precs, "", tokens)
     t |> equal(unknown.err, "'NAME' is neither a rule nor a token")
     t |> equal(unknown.err_rule, 0)
-    let same_kind <- grammar_from_text([TextRule(lhs = "e", rhs = "NUM"), TextRule(lhs = "e", rhs = "e PLUS '+'")], precs, "", tokens)
+    let same_kind <- grammar_from_text(
+                                       [TextRule(lhs = "e", rhs = "NUM"),
+                                        TextRule(lhs = "e", rhs = "e PLUS '+'")], precs, "", tokens)
     t |> equal(same_kind.err, "'+' and PLUS are the same token kind 43")
     t |> equal(same_kind.err_rule, 1)
-    let prec_kind <- grammar_from_text([TextRule(lhs = "e", rhs = "NUM")], [TextPrec(assoc = PrecAssoc.left, names <- ["NUM", "PLUS", "+"])], "", tokens)
+    let prec_kind <- grammar_from_text([TextRule(lhs = "e", rhs = "NUM")],
+                                       [
+                                        TextPrec(assoc = PrecAssoc.left,
+                                                 names <- ["NUM", "PLUS", "+"])], "", tokens)
     t |> equal(prec_kind.err, "'+' and PLUS are the same token kind 43")
     t |> equal(prec_kind.err_prec, 0)
     t |> equal(prec_kind.err_rule, -1)
     let no_root <- grammar_from_text([TextRule(lhs = "e", rhs = "NUM")], precs, "f", tokens)
     t |> equal(no_root.err, "root 'f' is not a rule")
-    let uminus <- grammar_from_text([TextRule(lhs = "e", rhs = "'-' e %prec UMINUS"), TextRule(lhs = "e", rhs = "NUM")],
-                                    [TextPrec(assoc = PrecAssoc.left, names <- ["-"]), TextPrec(assoc = PrecAssoc.right, names <- ["UMINUS"])],
+    let uminus <- grammar_from_text(
+                                    [TextRule(lhs = "e", rhs = "'-' e %prec UMINUS"),
+                                     TextRule(lhs = "e", rhs = "NUM")],
+                                    [TextPrec(assoc = PrecAssoc.left, names <- ["-"]),
+                                     TextPrec(assoc = PrecAssoc.right, names <- ["UMINUS"])],
                                     "", tokens)
     t |> equal(uminus.err, "")
     t |> equal(uminus.builder.prec_prods[0], uminus.builder.term_index?["UMINUS"] ?? -2)
@@ -267,8 +335,10 @@ def private unquote(s : string) : string => slice(s, 1, length(s) - 1)
 def json(var p : Parser) : JNode? {
     rule("value", "object")
     rule("value", "array")
-    rule("value", "STRING") <| $(t : FlexToken) => new JNode(kind = JKind.str, str = unquote(text(p.lexer, t)))
-    rule("value", "NUMBER") <| $(t : FlexToken) => new JNode(kind = JKind.number, num = to_double(text(p.lexer, t)))
+    rule("value", "STRING") <| $(t : FlexToken) => new JNode(kind = JKind.str,
+                                                             str = unquote(text(p.lexer, t)))
+    rule("value", "NUMBER") <| $(t : FlexToken) => new JNode(kind = JKind.number,
+                                                             num = to_double(text(p.lexer, t)))
     rule("value", "TRUE") <| $() => new JNode(kind = JKind.boolean, flag = true)
     rule("value", "FALSE") <| $() => new JNode(kind = JKind.boolean)
     rule("value", "NULL") <| $() => new JNode(kind = JKind.null_value)

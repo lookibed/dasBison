@@ -103,8 +103,12 @@ first such rule by id. A rule the root never reaches is not checked: a grammar k
 `lr_parse` runs one stack and takes the primary action of a cell (`action`, never `alt`), which
 is the shift in a shift/reduce cell - the dangling `else` binds to the inner `if`. On a refusal
 it reports the token position, the state and the refused terminal, and the expected terminals:
-every terminal that some reduce chain from the current stack ends in a shift or accept for, so
-the list is exact and not just the nonzero cells of the top state. `LR_MAX_REDUCES` bounds the
+every terminal that some reduce chain ends in a shift or accept for, from the stack the refused
+token was read on. An LALR state merged from several contexts reduces on a token none of them
+takes, so the stack at the refusal has lost terminals that were valid when the token was read;
+before each reduce, `lr_keep_popped` keeps the read-time states the reduce removes, and
+`lr_stack_at_read` rebuilds that stack. The list is exact and not just the nonzero cells of a
+state. `LR_MAX_REDUCES` bounds the
 reductions between two shifts, so a cyclic grammar's primary actions cannot loop.
 
 ## The precedence layer {#precedence}
@@ -232,8 +236,9 @@ input), the function returns a default-initialized value of its result type, and
 with `file:` left out when the lexer has no file name. `TOKEN` and the expected names are the
 grammar's: an enum member's name, a quoted character as written, `end of input`; an unknown kind
 reads `token kind N`. The expected set is `lr_parse`'s (`#driver`): every terminal some reduce
-chain from the current state stack ends in a shift or accept for, computed by `bison_expected`
-from the emitted tables, so it is exact and in terminal order. A lexer error is the parser's
+chain from the state stack the refused token was read on ends in a shift or accept for - the
+driver keeps the read-time states its reduces remove - computed by `bison_expected` from the
+emitted tables, so it is exact and in terminal order. A lexer error is the parser's
 error as the lexer worded it. A grammar error - an unknown name, a bad right-hand side, an action
 whose arguments do not match its values - fails the compile at the rule's line.
 

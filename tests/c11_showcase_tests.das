@@ -15,7 +15,8 @@ def test_typedef_after_declaration(t : T?) {
     t |> success(r.accepted, r.err)
     t |> equal(r.decls, 3)
     t |> equal(r.typedefs, 1)
-    t |> equal(parse_c11("T x;", "t.c").err, "t.c:1:1: unexpected IDENTIFIER, expected one of: {DECLARATION_START}")
+    t |> equal(parse_c11("T x;", "t.c").err,
+               "t.c:1:1: unexpected IDENTIFIER, expected one of: {DECLARATION_START}")
 }
 
 [test(description = "a parameter list inside a typedef's declarator keeps its own specifier flag: the function pointer is a type, its parameter is not, and a declarator after a function type is one again")]
@@ -65,11 +66,17 @@ def test_gnu_filter(t : T?) {
     t |> equal(c11_token_count(src), 21)
 }
 
-[test(description = "a missing ; refuses the } at its line and column, naming the expected set")]
+//! what a constant in an expression can meet: a postfix, a binary or an assignment operator, `?`, `,`, `;`
+let private AFTER_CONSTANT = ("'(', ',', '[', '.', PTR_OP, INC_OP, DEC_OP, '&', '*', '+', '-', '/', '%', "
+    + "LEFT_OP, RIGHT_OP, '<', '>', LE_OP, GE_OP, EQ_OP, NE_OP, '^', '|', AND_OP, OR_OP, '?', '=', "
+    + "MUL_ASSIGN, DIV_ASSIGN, MOD_ASSIGN, ADD_ASSIGN, SUB_ASSIGN, LEFT_ASSIGN, RIGHT_ASSIGN, "
+    + "AND_ASSIGN, XOR_ASSIGN, OR_ASSIGN, ';'")
+
+[test(description = "a missing ; refuses the } at its line and column, naming every token the constant before it could meet, not only the ones left after the reduces the } ran")]
 def test_malformed(t : T?) {
     let r = parse_c11("int f(void)\n\{\n    return 1\n\}\n", "bad.c")
     t |> success(!r.accepted)
-    t |> equal(r.err, "bad.c:4:1: unexpected '\}', expected one of: ',', ';'")
+    t |> equal(r.err, "bad.c:4:1: unexpected '\}', expected one of: {AFTER_CONSTANT}")
 }
 
 [test(description = "the preprocessed qsort comparator in tests/data parses from disk, found beside this test file")]
