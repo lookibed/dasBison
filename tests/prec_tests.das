@@ -24,7 +24,8 @@ def private terms(var gb : LalrBuilder; names : array<string>) : array<int> =>
 
 // a word that is a declared terminal is that terminal, any other is `num`
 def private tokens(gb : LalrBuilder; text : string) : array<int> =>
-    <- [for (w in split(text, " ")); gb.term_index?[w] ?? (gb.term_index?["num"] ?? -1); where !empty(w)]
+    <- [for (w in split(text, " "));
+        gb.term_index?[w] ?? (gb.term_index?["num"] ?? -1); where !empty(w)]
 
 // `E ::= E op E` per operator, `( E )` and `num`
 def private arith(ops : array<string>) : LalrBuilder {
@@ -73,6 +74,31 @@ def private parse_tree(tb : LalrTables; gb : LalrBuilder; text : string) : strin
     return expand(tb, words, r.reductions, ri, wi)
 }
 
+// every action of a resolved cell is accounted for: the chosen one (unless an error), the removed
+// ones and the default's kept losers are, together, the actions the input cell held
+def private check_accounted(t : T?; tb : LalrTables; res : PrecResult) {
+    for (c in res.report.cells) {
+        let cell = c.state * tb.nterms + c.term
+        var inscope had <- [tb.action[cell]]
+        tb.alt |> get(cell) $(extra) {
+            had |> push_from(extra)
+        }
+        sort(had)
+        var inscope got <- [for (a in c.removed); a]
+        got |> push_from(c.kept)
+        if (c.how != PrecHow.nonassoc) {
+            got |> push(c.chosen)
+        }
+        sort(got)
+        t |> equal(got, had, "state {c.state} on {c.token}")
+        if (c.how == PrecHow.by_default) {
+            t |> equal(length(c.removed), 0, "a default cell removes nothing")
+        } else {
+            t |> equal(length(c.kept), 0, "a resolved cell keeps nothing")
+        }
+    }
+}
+
 [test(description = "%left on + and * resolves the four shift/reduce cells of the ambiguous expression grammar into a copy: * binds tighter, + associates left")]
 def test_left(t : T?) {
     var gb <- arith(["+", "*"])
@@ -92,6 +118,7 @@ def test_left(t : T?) {
     t |> equal(format_report(res.report), "")
     t |> equal(tb.conflicts, 4)
     t |> equal(length(tb.alt), 4)
+    check_accounted(t, tb, res)
     t |> equal(parse_tree(res.tables, gb, "1 + 2 * 3"), "+(1, *(2, 3))")
     t |> equal(parse_tree(res.tables, gb, "1 * 2 + 3"), "+(*(1, 2), 3)")
     t |> equal(parse_tree(res.tables, gb, "1 + 2 + 3"), "+(+(1, 2), 3)")
@@ -120,7 +147,8 @@ def test_left_same_level(t : T?) {
     t |> equal(parse_tree(res.tables, gb, "1 - 2 + 3"), "+(-(1, 2), 3)")
     t |> equal(parse_tree(res.tables, gb, "1 - 2 * 3 - 4"), "-(-(1, *(2, 3)), 4)")
     let r <- lr_parse(res.tables, tokens(gb, "1 - 2 - 3"))
-    let ops <- [for (p in r.reductions); describe_prod(res.tables, p); where length(res.tables.prods[p].rhs) == 3]
+    let ops <- [for (p in r.reductions); describe_prod(res.tables, p);
+                where length(res.tables.prods[p].rhs) == 3]
     t |> equal(ops, ["E ::= E - E", "E ::= E - E"])
     t |> equal(r.reductions[2], 2)
 }
@@ -130,9 +158,11 @@ def test_right(t : T?) {
     var gb <- arith(["+", "^"])
     prec_left(gb, terms(gb, ["+"]))
     prec_right(gb, terms(gb, ["^"]))
-    let res <- resolve_precedence(build_lalr(gb, rule_id(gb, "E")), gb)
+    let tb <- build_lalr(gb, rule_id(gb, "E"))
+    let res <- resolve_precedence(tb, gb)
     t |> equal(res.report.by_precedence, 4)
     t |> equal(res.tables.conflicts, 0)
+    check_accounted(t, tb, res)
     t |> equal(parse_tree(res.tables, gb, "2 ^ 3 ^ 4"), "^(2, ^(3, 4))")
     t |> equal(parse_tree(res.tables, gb, "1 + 2 ^ 3 + 4"), "+(+(1, ^(2, 3)), 4)")
 }
@@ -150,6 +180,7 @@ def test_nonassoc(t : T?) {
     t |> equal(res.report.by_default, 0)
     t |> equal(res.tables.conflicts, 0)
     t |> equal(length(res.tables.alt), 0)
+    check_accounted(t, tb, res)
     for (c in res.report.cells) {
         if (c.how == PrecHow.nonassoc) {
             t |> equal(c.term, term_id(gb, "<"))
@@ -167,6 +198,25 @@ def test_nonassoc(t : T?) {
     t |> equal(r.token, term_id(gb, "<"))
     t |> success(find_index(r.expected, term_id(gb, "<")) < 0, "< is not expected")
     t |> equal(r.expected, [term_id(gb, "+"), res.tables.eof])
+}
+
+[test(description = "a non-associative tie errs the whole cell: a reduce without precedence in it is removed with the tied shift and reduce, and recorded")]
+def test_nonassoc_whole_cell(t : T?) {
+    var gb : LalrBuilder
+    prod(gb, "E", "E < E")
+    prod(gb, "E", "E < B")
+    prod(gb, "B", "E")
+    prod(gb, "E", "num")
+    prec_nonassoc(gb, terms(gb, ["<"]))
+    let tb <- build_lalr(gb, rule_id(gb, "E"))
+    let res <- resolve_precedence(tb, gb)
+    t |> equal(res.report.nonassoc_errors, 1)
+    check_accounted(t, tb, res)
+    for (c in res.report.cells) {
+        if (c.how == PrecHow.nonassoc) {
+            t |> equal(length(c.removed), 3)
+        }
+    }
 }
 
 [test(description = "a %prec override gives unary minus a level above *, so - 1 * 2 is *(-1, 2); without it the minus takes the precedence of -")]
@@ -220,6 +270,7 @@ def test_unresolved_default_shift(t : T?) {
     t |> success(c.chosen > 0, "the shift wins")
     t |> equal(length(c.kept), 1)
     t |> equal(describe_action(tb, c.kept[0]), "reduce S ::= if C then S")
+    check_accounted(t, tb, res)
     let r <- lr_parse(res.tables, tokens(gb, "if cond then if cond then other else other"))
     t |> success(r.ok)
     let text = ("State 7 conflicts: 1 shift/reduce\n" +
@@ -239,7 +290,8 @@ def test_dangling_else_declared(t : T?) {
     t |> equal(res.tables.conflicts, 0)
     let r <- lr_parse(res.tables, tokens(gb, "if cond then if cond then other else other"))
     t |> success(r.ok)
-    let ifs <- [for (p in r.reductions); length(res.tables.prods[p].rhs); where length(res.tables.prods[p].rhs) > 1]
+    let ifs <- [for (p in r.reductions); length(res.tables.prods[p].rhs);
+                where length(res.tables.prods[p].rhs) > 1]
     t |> equal(ifs, [6, 4])
 }
 
