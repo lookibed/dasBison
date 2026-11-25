@@ -5,22 +5,9 @@ require dastest/testing_boost public
 require bison/lalr
 require bison/prec
 require daslib/strings_boost
-
-// `lhs ::= words`: a word starting with an upper-case letter is a rule, any other a terminal
-def private prod(var gb : LalrBuilder; lhs : string; text : string) {
-    var rhs : array<int>
-    for (w in split(text, " ")) {
-        continue if (empty(w))
-        let c = first_character(w)
-        rhs |> push(c >= 'A' && c <= 'Z' ? rule_sym(rule_id(gb, w)) : term_sym(term_id(gb, w)))
-    }
-    add_production(gb, rule_id(gb, lhs), rhs)
-}
+require _lalr_fixtures
 
 def private tid(gb : LalrBuilder; name : string) : int => gb.term_index?[name] ?? -1
-
-def private tokens(gb : LalrBuilder; text : string) : array<int> =>
-    <- [for (w in split(text, " ")); gb.term_index?[w] ?? -1; where !empty(w)]
 
 def private expr_grammar() : LalrBuilder {
     var gb : LalrBuilder
@@ -30,15 +17,6 @@ def private expr_grammar() : LalrBuilder {
     prod(gb, "T", "F")
     prod(gb, "F", "( E )")
     prod(gb, "F", "id")
-    return <- gb
-}
-
-def private dangling_else() : LalrBuilder {
-    var gb : LalrBuilder
-    prod(gb, "S", "if C then S")
-    prod(gb, "S", "if C then S else S")
-    prod(gb, "S", "other")
-    prod(gb, "C", "cond")
     return <- gb
 }
 

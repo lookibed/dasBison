@@ -5,27 +5,10 @@ require dastest/testing_boost public
 require bison/lalr
 require bison/prec
 require daslib/strings_boost
-
-// `lhs ::= words`: a word starting with an upper-case letter is a rule, any other a terminal;
-// returns the production's index in the builder
-def private prod(var gb : LalrBuilder; lhs : string; text : string) : int {
-    var rhs : array<int>
-    for (w in split(text, " ")) {
-        continue if (empty(w))
-        let c = first_character(w)
-        rhs |> push(c >= 'A' && c <= 'Z' ? rule_sym(rule_id(gb, w)) : term_sym(term_id(gb, w)))
-    }
-    add_production(gb, rule_id(gb, lhs), rhs)
-    return length(gb.prods) - 1
-}
+require _lalr_fixtures
 
 def private terms(var gb : LalrBuilder; names : array<string>) : array<int> =>
     <- [for (n in names); term_id(gb, n)]
-
-// a word that is a declared terminal is that terminal, any other is `num`
-def private tokens(gb : LalrBuilder; text : string) : array<int> =>
-    <- [for (w in split(text, " "));
-        gb.term_index?[w] ?? (gb.term_index?["num"] ?? -1); where !empty(w)]
 
 // `E ::= E op E` per operator, `( E )` and `num`
 def private arith(ops : array<string>) : LalrBuilder {
@@ -240,15 +223,6 @@ def test_prec_override(t : T?) {
     t |> equal(res.tables.conflicts, 0)
     t |> equal(parse_tree(res.tables, gb, "- 1 * 2"), "*(-1, 2)")
     t |> equal(parse_tree(res.tables, gb, "1 - - 2 - 3"), "-(-(1, -2), 3)")
-}
-
-def private dangling_else() : LalrBuilder {
-    var gb : LalrBuilder
-    prod(gb, "S", "if C then S")
-    prod(gb, "S", "if C then S else S")
-    prod(gb, "S", "other")
-    prod(gb, "C", "cond")
-    return <- gb
 }
 
 [test(description = "a cell whose production has no precedence stays a conflict: resolved by the default shift, counted and kept in alt")]
