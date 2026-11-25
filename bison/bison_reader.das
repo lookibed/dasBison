@@ -8,6 +8,7 @@ require daslib/ast_boost
 require daslib/strings_boost
 require strings
 require math
+require bison/grammar_text
 
 // `%bison~ name : Type, tokens = Enum, lexer = scan` ... `%%` at module level: a yacc-like text form
 // of a grammar. The reader turns the text into the source of a `[bison]` function - one output line
@@ -42,10 +43,7 @@ def private fail(var s : RScan; msg : string) {
 
 def private peek(s : RScan; k : int = 0) : int => s.pos + k < length(s.d) ? int(s.d[s.pos + k]) : -1
 
-def private is_blank(c : int) : bool => c == ' ' || c == '\t' || c == '\r'
-
-def private is_ident(c : int; first : bool) : bool =>
-    is_alpha(c) || c == '_' || (!first && is_number(c))
+def private is_blank(c : int) : bool => is_tab_or_space(c) || c == '\r'
 
 def private skip_blanks(var s : RScan) {
     while (is_blank(peek(s))) {
@@ -73,7 +71,7 @@ def private next_line(var s : RScan) : bool {
 //! an identifier at the cursor, "" when there is none
 def private ident(var s : RScan) : string {
     let start = s.pos
-    while (is_ident(peek(s), s.pos == start)) {
+    while (s.pos == start ? is_name_start(peek(s)) : is_name_char(peek(s))) {
         s.pos++
     }
     return slice(s.d, start, s.pos)
@@ -108,15 +106,14 @@ def private skip_space(var s : RScan) {
 }
 
 //! a quoted character as written (`'+'`, `'\''`), the quote at the cursor; "" when malformed
-def private quoted_char(var s : RScan) : string {
+def private quoted_symbol(var s : RScan) : string {
     let start = s.pos
-    let k = peek(s, 1) == '\\' ? 3 : 2
-    if (peek(s, 1) < 0 || peek(s, 1) == '\n' || peek(s, k) != '\''
-        || (k == 2 && peek(s, 1) == '\'')) {
+    let q = quoted_char(s.d, s.pos)
+    if (q.x < 0) {
         fail(s, "a quoted character is one character between single quotes")
         return ""
     }
-    s.pos += k + 1
+    s.pos = q.y
     return slice(s.d, start, s.pos)
 }
 
@@ -277,7 +274,7 @@ def private action_code(var s : RScan; var w : StringBuilderWriter; var alt : RA
             action_comment(s, w)
         } elif (c == '$') {
             action_dollar(s, w, alt)
-        } elif (is_ident(c, true)) {
+        } elif (is_name_start(c)) {
             let word = ident(s)
             w |> write(word)
             if (word == "return") {
@@ -310,7 +307,7 @@ def private alt_directive(var s : RScan; var alt : RAlt) {
         return
     }
     skip_blanks(s)
-    alt.prec = peek(s) == '\'' ? quoted_char(s) : ident(s)
+    alt.prec = peek(s) == '\'' ? quoted_symbol(s) : ident(s)
     if (empty(alt.prec) && empty(s.err)) {
         fail(s, "%prec needs a token name")
     }
@@ -333,7 +330,7 @@ def private alternative(var s : RScan; var alt : RAlt; var last_line : int&) : b
     while (empty(s.err)) {
         skip_space(s)
         let c = peek(s)
-        if (c < 0 || (is_ident(c, true) && starts_rule(s))) {
+        if (c < 0 || (is_name_start(c) && starts_rule(s))) {
             fail_at(s, "the rule '{alt.lhs}' ends with ';'", last_line)
             return true
         }
@@ -356,9 +353,9 @@ def private alternative(var s : RScan; var alt : RAlt; var last_line : int&) : b
                 action_code(s, w, alt)
             }
         } elif (c == '\'') {
-            alt.syms |> push(quoted_char(s))
+            alt.syms |> push(quoted_symbol(s))
             alt.line = s.line
-        } elif (is_ident(c, true)) {
+        } elif (is_name_start(c)) {
             alt.syms |> push(ident(s))
             alt.line = s.line
         } else {
@@ -456,7 +453,7 @@ def private header(var s : RScan; var decls : RDecls) {
     for (part in [decls.name, decls.tokens, decls.lexer]) {
         ok &&= !empty(part)
         for (i, c in count(), part) {
-            ok &&= is_ident(c, i == 0)
+            ok &&= i == 0 ? is_name_start(c) : is_name_char(c)
         }
     }
     if (!ok) {
@@ -506,7 +503,8 @@ def private strip_comments(line : string) : string {
                 let c = int(d[i])
                 let next = i + 1 < n ? int(d[i + 1]) : -1
                 if (c == '\'') {
-                    let k = min(i + (next == '\\' ? 4 : 3), n)
+                    let q = quoted_char(d, i)
+                    let k = q.x >= 0 ? q.y : i + 1
                     for (j in range(i, k)) {
                         w |> write_char(int(d[j]))
                     }

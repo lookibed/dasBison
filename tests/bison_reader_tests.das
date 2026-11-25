@@ -359,6 +359,8 @@ def test_reader_errors(t : T?) {
     let cases <- [
         ReaderError(text = h + "e : '' ;\n",
                     err = "a quoted character is one character between single quotes", line = 2),
+        ReaderError(text = h + "e : ''' ;\n",
+                    err = "a quoted character is one character between single quotes", line = 2),
         ReaderError(text = h + "e : N \{ $$ = \"abc \} ;\n",
                     err = "a string in the action ends at the end of the rules", line = 3),
         ReaderError(text = h + "e : N \{ $$ 1 \} ;\n", err = dollars, line = 2),

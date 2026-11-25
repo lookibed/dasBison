@@ -332,6 +332,10 @@ def test_rhs_text(t : T?) {
     t |> equal(length(parse_rhs("").syms), 0)
     t |> equal(parse_rhs("a 'bc'").err,
                "a quoted character is one character between single quotes, at offset 2")
+    for (bad in ["'''", "'\n'"]) {
+        t |> equal(parse_rhs("a {bad}").err,
+                   "a quoted character is one character between single quotes, at offset 2", bad)
+    }
     t |> equal(parse_rhs("a %prec").err, "%prec needs a token name")
     t |> equal(parse_rhs("a %prec X b").err, "'b' after %prec X: %prec ends the right-hand side")
     t |> equal(parse_rhs("a + b").err,

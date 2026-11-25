@@ -49,19 +49,24 @@ struct TextGrammar {
     err_prec : int = -1         //!< the precedence line `err` is about, -1 when it is about none
 }
 
-def private is_name_start(c : int) : bool => is_alpha(c) || c == '_'
+//! Whether `c` starts a name: a letter or `_`.
+def is_name_start(c : int) : bool => is_alpha(c) || c == '_'
 
-def private is_name_char(c : int) : bool => is_name_start(c) || is_number(c)
+//! Whether `c` continues a name: a letter, a digit or `_`.
+def is_name_char(c : int) : bool => is_name_start(c) || is_number(c)
 
-// the byte of a quoted character at `i` (`'c'`, `'\''`, `'\\'`), and where it ends; (-1, i) when none
-def private quoted_char(bytes : array<uint8>; i : int) : int2 {
+//! The byte of the quoted character whose opening quote is at `i` (`'c'`, `'\''`, `'\\'`, `'\n'`),
+//! and the offset past its closing quote; (-1, i) when none is there. The character between the
+//! quotes is one byte, neither a quote, a backslash nor a newline, or a backslash and one byte.
+def quoted_char(bytes : array<uint8> implicit; i : int) : int2 {
     let n = length(bytes)
-    if (i + 2 < n && int(bytes[i + 1]) != '\\' && int(bytes[i + 2]) == '\'') {
-        return int2(int(bytes[i + 1]), i + 3)
+    let c = i + 1 < n ? int(bytes[i + 1]) : -1
+    if (i + 2 < n && c != '\\' && c != '\'' && c != '\n' && int(bytes[i + 2]) == '\'') {
+        return int2(c, i + 3)
     }
     if (i + 3 < n && int(bytes[i + 1]) == '\\' && int(bytes[i + 3]) == '\'') {
-        let c = int(bytes[i + 2])
-        let esc = c == 'n' ? '\n' : (c == 't' ? '\t' : (c == 'r' ? '\r' : c))
+        let e = int(bytes[i + 2])
+        let esc = e == 'n' ? '\n' : (e == 't' ? '\t' : (e == 'r' ? '\r' : e))
         return int2(esc, i + 4)
     }
     return int2(-1, i)

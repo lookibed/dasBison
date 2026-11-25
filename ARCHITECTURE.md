@@ -24,7 +24,9 @@ dasFlex's runtime module `flex/flex`, the only package dasBison requires.
   `nclasses`, the core's `tables`), and `byte_terms` / `lr_parse_bytes`.
 - `bison/grammar_text.das` - grammars as yacc-like text: `parse_rhs` (`TextRhs`, `TextSymbol`),
   `grammar_from_text` from `TextRule`s and `TextPrec`s into a `TextGrammar` (the core's builder,
-  the token kind of every terminal), and `conflict_warning`. Emits no code.
+  the token kind of every terminal), and `conflict_warning`; and the lexing both text front ends
+  share - `quoted_char`, `is_name_start`, `is_name_char` - so a quoted character or a name reads
+  the same in a right-hand side and in `%bison~` text. Emits no code.
 - `bison/bison_parser.das` - what a generated parser runs on: `Parser`, `parser_open`,
   `text(lx, token)`, and the helpers the driver calls (`bison_pop`, `bison_terminal`,
   `bison_expected`, `bison_syntax_error`, `bison_lexer_failed`). Builds no tables.
@@ -38,7 +40,8 @@ dasFlex's runtime module `flex/flex`, the only package dasBison requires.
   `02_bison_reader.das` the same calculator as `%bison~` text.
 - `tests/` - the package's tests; `tests/_grammar_c11.das` is the C11 grammar fixture (the
   owner's probe grammar, its productions folded into `add_production` literals), which dastest
-  skips as a test because of its leading `_`.
+  skips as a test because of its leading `_`, as it skips the other shared helpers there
+  (`_compile_issues`, `_bison_run`, `_lalr_fixtures`).
 
 ## Integer terminals {#int-terminals}
 
