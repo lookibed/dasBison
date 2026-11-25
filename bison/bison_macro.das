@@ -572,21 +572,42 @@ def private token_kinds(name : string) : tuple<kinds : table<string; int>; err :
         res.err = "[bison] tokens = {name}: no such enum"
         return <- res
     }
-    var next = 0
+    var next = 0l
     for (e in en.list) {
         var v = next
         if (e.value != null) {
-            if (e.value is ExprConstInt) {
-                v = (e.value as ExprConstInt).value
-            } else {
+            let lit = integer_literal(e.value)
+            if (!lit.ok) {
                 res.err = "[bison] tokens = {name}: the value of {e.name} is not an integer literal"
                 return <- res
             }
+            v = lit.value
         }
-        res.kinds[string(e.name)] = v
-        next = v + 1
+        if (v < -2147483648l || v > 2147483647l) {
+            res.err = "[bison] tokens = {name}: {e.name} = {v} does not fit a token kind, an int"
+            return <- res
+        }
+        res.kinds[string(e.name)] = int(v)
+        next = v + 1l
     }
     return <- res
+}
+
+//! the value of an integer literal of any width or sign, `-` before one included
+def private integer_literal(e : Expression const?) : tuple<ok : bool; value : int64> {
+    if (e is ExprOp1 && (e as ExprOp1).op == "-") {
+        let inner = integer_literal((e as ExprOp1).subexpr)
+        return (ok = inner.ok, value = -inner.value)
+    }
+    return (ok = true, value = int64((e as ExprConstInt).value)) if (e is ExprConstInt)
+    return (ok = true, value = int64((e as ExprConstInt8).value)) if (e is ExprConstInt8)
+    return (ok = true, value = int64((e as ExprConstInt16).value)) if (e is ExprConstInt16)
+    return (ok = true, value = (e as ExprConstInt64).value) if (e is ExprConstInt64)
+    return (ok = true, value = int64((e as ExprConstUInt).value)) if (e is ExprConstUInt)
+    return (ok = true, value = int64((e as ExprConstUInt8).value)) if (e is ExprConstUInt8)
+    return (ok = true, value = int64((e as ExprConstUInt16).value)) if (e is ExprConstUInt16)
+    return (ok = true, value = int64((e as ExprConstUInt64).value)) if (e is ExprConstUInt64)
+    return (ok = false, value = 0l)
 }
 
 //! a failure that belongs to one call is reported at its line; the annotation fails with a pointer to it

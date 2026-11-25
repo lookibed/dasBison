@@ -157,8 +157,9 @@ the level of `NAME`. A precedence argument is a token name, a quoted character o
 punctuation character; a name neither a token nor a quoted character is a pseudo-terminal no
 kind reaches (yacc's `%prec UMINUS`). `scan` is the `[flex]` function the parser pulls tokens
 from: one token per call, `p.lexer.tok.kind` its kind, `false` at the end of input or on a lexer
-error. The enum is read from the AST at parse time, so a member's value is a literal or the
-previous member's plus one.
+error. The enum is read from the AST at parse time, so a member's value is an integer literal of any
+width or sign (a typed enum's `200u8` included), `-` before one, or the previous member's plus
+one; an expression (`1 << 3`, a constant's name) is refused.
 
 `grammar_from_text` turns the text into the core's builder; the macro adds nothing to the
 construction. A terminal is keyed by its kind: two names for one kind are an error, so an enum

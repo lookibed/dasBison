@@ -157,6 +157,45 @@ def test_expected_before_reduce(t : T?) {
     t |> equal(p.err, "1:5: unexpected Y, expected one of: X, Z")
 }
 
+enum STok : uint8 {
+    NUM = 200u8
+    NEG = 10u8
+    END
+}
+
+[flex]
+def small_lex(var lx : FlexLexer) : bool {
+    rule("[0-9]+") {
+        lx |> emit(STok.NUM)
+    }
+    rule("-") {
+        lx |> emit(STok.NEG)
+    }
+    rule(";") {
+        lx |> emit(STok.END)
+    }
+    rule(" +") {
+    }
+}
+
+// a typed enum: its members' values are uint8 literals, END the one after NEG
+[bison(tokens = STok, lexer = small_lex)]
+def small(var p : Parser) : int {
+    rule("s", "n END") <| $(v : int; e : FlexToken) => v
+    rule("n", "NUM") <| $(t : FlexToken) => to_int(text(p.lexer, t))
+    rule("n", "NEG n") <| $(m : FlexToken; v : int) => -v
+}
+
+[test(description = "a typed enum gives the token kinds: uint8 literals and the member after one are read as kinds")]
+def test_typed_enum(t : T?) {
+    var p : Parser
+    parser_open(p, "- - 42 ;")
+    t |> equal(small(p), 42)
+    parser_open(p, "- 7")
+    small(p)
+    t |> equal(p.err, "1:4: unexpected end of input, expected one of: END")
+}
+
 def private dangling_else() : TextGrammar {
     let rules <- [TextRule(lhs = "stmt", rhs = "IF stmt"),
                   TextRule(lhs = "stmt", rhs = "IF stmt ELSE stmt"),
