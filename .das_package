@@ -6,10 +6,15 @@ require daslib/daspkg
 def package() {
     package_name("dasBison")
     package_author("lookibed")
-    package_description("A parser generator for daslang: LALR(1) tables over integer terminals, with a byte-class front end")
+    package_description("A parser generator for daslang: LALR(1) tables over integer terminals, a byte-class front end, and a [bison] macro over dasFlex tokens")
     package_license("MIT")
     package_tag("parsing")
     package_min_sdk("0.6")
+}
+
+[export]
+def dependencies(version : string) {
+    require_package("github.com/lookibed/dasFlex")
 }
 
 [export]
