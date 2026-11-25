@@ -148,3 +148,7 @@ Install: `daspkg install github.com/lookibed/dasBison` (it brings dasFlex), then
 daslang checkout:
 `daslang -load_module <dasBison> -load_module <dasFlex> dastest/dastest.das -- --test <dasBison>/tests`. Design and the
 rules a change must keep: `ARCHITECTURE.md`, `REVIEW.md`.
+
+The C11 example (`examples/c11`, and `tests/c11_showcase_tests.das` through it) requires dasFlex's C
+lexer by a relative path, `../../../dasFlex/examples/c_lexer/c_lexer.das`: it assumes a dasFlex
+checkout beside the dasBison one (`<dir>/dasBison`, `<dir>/dasFlex`).
