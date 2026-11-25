@@ -5,6 +5,8 @@ require dastest/testing_boost public
 require bison/bytes
 require bison/prec
 require daslib/strings_boost
+require daslib/fio
+require daslib/module_path
 require _grammar_c11
 
 // the C11 grammar with one terminal id per token and no byte layer: every byte set it uses is one
@@ -97,5 +99,38 @@ def test_c11_int(t : T?) {
                 where starts_with(describe_prod(res.tables, p), "selection_statement ::= IF")]
     t |> equal(ifs, ["selection_statement ::= IF '(' expression ')' statement ELSE statement",
                      "selection_statement ::= IF '(' expression ')' statement"])
-    t |> success(!lr_parse(res.tables, [for (w in split("INT ';' ELSE", " ")); lb.term_index?[w] ?? -1]).ok)
+    t |> success(
+                 !lr_parse(res.tables,
+                           [for (w in split("INT ';' ELSE", " ")); lb.term_index?[w] ?? -1]).ok)
+}
+
+// the `rule("lhs", "rhs")` calls of the [bison] C11 example as `lhs ::= rhs`, in source order,
+// the braces the string literals escape read as braces
+def private example_rules() : array<string> {
+    let src = fread(path_join(get_this_module_dir(), "../examples/c11/c11_parser.das"))
+    var out : array<string>
+    for (line in split(src, "\n")) {
+        let at = find(line, "    rule(\"")
+        continue if (at != 0)
+        var inscope parts <- split(slice(line, 10), "\"")
+        out |> push(replace(replace("{parts[0]} ::= {parts[2]}", "\\\{", "\{"), "\\\}", "\}"))
+    }
+    return <- out
+}
+
+[test(description = "the C11 grammar of these tests and the [bison] C11 example are one grammar: the same productions, as lhs ::= rhs, in the same order", timeout = 1200)]
+def test_c11_one_grammar(t : T?) {
+    var gb : GrammarBuilder
+    build_c11(gb)
+    let lb <- c11_int_builder(t, gb)
+    var inscope ours <- [for (p in lb.prods); build_string() $(var w) {
+            w |> write("{lb.rule_names[p.lhs]} ::=")
+            for (s in p.rhs) {
+                w |> write(" ")
+                w |> write(s < 0 ? lb.rule_names[-1 - s] : lb.term_names[s])
+            }
+        }]
+    var inscope theirs <- example_rules()
+    t |> equal(length(theirs), 274)
+    t |> equal(ours, theirs)
 }
