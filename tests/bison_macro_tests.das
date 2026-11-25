@@ -520,3 +520,27 @@ def test_no_token(t : T?) {
     t |> has_issue(issues, "notok.das:17:")
     t |> success(find(issues, "dimension") < 0, issues)
 }
+
+//! a module with a NUM lexer and a `[bison(tokens = Tok)]` grammar over `NUM`, after `head`
+def private tok_module(head : string) : string {
+    return ("options gen2\nrequire flex/flex_macro\nrequire bison/bison_macro\n{head}"
+        + "[flex]\ndef lx(var lx : FlexLexer) : bool \{\n    rule(\"[0-9]+\") \{\n        lx |> emit(256)\n    \}\n\}\n"
+        + "[bison(tokens = Tok, lexer = lx)]\ndef calc(var p : Parser) : int \{\n"
+        + "    rule(\"e\", \"NUM\") <| $(n : FlexToken) => 1\n\}\n")
+}
+
+[test(description = "the token enum is the one the module sees: a loaded enum no require reaches is unknown, two required modules that both declare it are ambiguous, the module's own wins")]
+def test_token_enum_visibility(t : T?) {
+    let tok1 = (name = "tok1.das",
+                text = "options gen2\nmodule tok1 public\nenum Tok \{\n    NUM = 256\n\}\n")
+    let tok2 = (name = "tok2.das",
+                text = "options gen2\nmodule tok2 public\nenum Tok \{\n    NUM = 256\n\}\n")
+    let unseen = replace(tok_module(""), "tokens = Tok", "tokens = PrecAssoc")
+    t |> has_issue(compile_issues("vis1.das", unseen),
+                   "tokens = PrecAssoc: no such enum the module sees")
+    t |> equal(compile_issues("vis2.das", tok_module("require tok1\n"), [tok1, tok2]), "")
+    let both = compile_issues("vis3.das", tok_module("require tok1\nrequire tok2\n"), [tok1, tok2])
+    t |> has_issue(both, "tokens = Tok: ambiguous, an enum of tok")
+    let own = "require tok1\nrequire tok2\nenum Tok \{\n    NUM = 256\n\}\n"
+    t |> equal(compile_issues("vis4.das", tok_module(own), [tok1, tok2]), "")
+}

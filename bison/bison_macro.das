@@ -9,6 +9,7 @@ module bison_macro shared public
 require daslib/ast_boost
 require daslib/templates_boost
 require math
+require daslib/strings_boost
 
 require bison/lalr
 require bison/prec
@@ -556,22 +557,40 @@ def private string_arg(args : AnnotationArgumentList; name, absent : string) : s
     return arg is tString ? arg as tString : absent
 }
 
-//! the members of enum `name` and their values, the token kinds; `err` when there is no such enum
-//! or a member's value is not a constant the parse gives
-def private token_kinds(name : string) : tuple<kinds : table<string; int>; err : string> {
-    var res : tuple<kinds : table<string; int>; err : string>
-    var en : Enumeration? = compiling_module() |> module_find_enumeration(name)
-    if (en == null) {
-        for_each_module(get_ptr(compiling_program())) $(m) {
-            if (en == null) {
-                en = m |> module_find_enumeration(name)
+//! enum `name` as the compiling module sees it: its own, else the one module it requires (directly
+//! or through a public require) that declares it; `err` when none or several do
+def private visible_enum(name : string) : tuple<en : Enumeration?; err : string> {
+    let here = compiling_module()
+    var en : Enumeration? = here |> module_find_enumeration(name)
+    return (en = en, err = "") if (en != null)
+    var inscope owners : array<string>
+    for_each_module(get_ptr(compiling_program())) $(m) {
+        if (m != here && is_visible_directly(here, m)) {
+            var found : Enumeration? = m |> module_find_enumeration(name)
+            if (found != null) {
+                en = found
+                owners |> push(string(m.name))
             }
         }
     }
-    if (en == null) {
-        res.err = "[bison] tokens = {name}: no such enum"
+    if (length(owners) > 1) {
+        return (en = null,
+                err = "[bison] tokens = {name}: ambiguous, an enum of {join(owners, " and ")}")
+    }
+    return (en = en,
+            err = en == null ? "[bison] tokens = {name}: no such enum the module sees" : "")
+}
+
+//! the members of enum `name` and their values, the token kinds; `err` when the module sees no
+//! such enum or several, or a member's value is not a constant the parse gives
+def private token_kinds(name : string) : tuple<kinds : table<string; int>; err : string> {
+    var res : tuple<kinds : table<string; int>; err : string>
+    let vis = visible_enum(name)
+    if (vis.en == null) {
+        res.err = vis.err
         return <- res
     }
+    let en = vis.en
     var next = 0l
     for (e in en.list) {
         var v = next

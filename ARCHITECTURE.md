@@ -158,7 +158,9 @@ punctuation character, which names the token a right-hand side writes quoted (`\
 a name neither a token nor a quoted character is a pseudo-terminal no kind reaches (yacc's
 `%prec UMINUS`). `scan` is the `[flex]` function the parser pulls tokens
 from: one token per call, `p.lexer.tok.kind` its kind, `false` at the end of input or on a lexer
-error. The enum is read from the AST at parse time, so a member's value is an integer literal of any
+error. `Enum` is the enum the module sees by that name: its own, else the one a module it requires -
+directly or through a public require - declares; two such modules are an ambiguity, and an enum
+only some other loaded module declares is unknown. The enum is read from the AST at parse time, so a member's value is an integer literal of any
 width or sign (a typed enum's `200u8` included), `-` before one, or the previous member's plus
 one; an expression (`1 << 3`, a constant's name) is refused.
 
