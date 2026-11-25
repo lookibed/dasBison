@@ -7,7 +7,7 @@ require bison/grammar_text
 require bison/lalr
 require bison/prec
 require flex/flex_macro
-require strings
+require daslib/strings_boost
 
 enum CTok {
     NUM = 256
@@ -204,4 +204,162 @@ def test_void_rule(t : T?) {
     parser_open(p, "a bc d ;")
     t |> equal(words(p), 3)
     t |> equal(g_seen, ["a", "bc", "d"])
+}
+
+enum JTok {
+    STRING = 256
+    NUMBER = 257
+    TRUE = 258
+    FALSE = 259
+    NULL = 260
+}
+
+[flex]
+def json_lex(var lx : FlexLexer) : bool {
+    rule("[ \\t\\r\\n]+") {
+    }
+    rule("[\\\{\\\}\\[\\]:,]") {
+        lx |> emit(first_character(text(lx)))
+    }
+    rule("true") {
+        lx |> emit(JTok.TRUE)
+    }
+    rule("false") {
+        lx |> emit(JTok.FALSE)
+    }
+    rule("null") {
+        lx |> emit(JTok.NULL)
+    }
+    rule("-?(0|[1-9][0-9]*)(\\.[0-9]+)?([eE][+-]?[0-9]+)?") {
+        lx |> emit(JTok.NUMBER)
+    }
+    rule("\"([^\"\\\\]|\\\\.)*\"") {
+        lx |> emit(JTok.STRING)
+    }
+}
+
+enum JKind {
+    null_value
+    boolean
+    number
+    str
+    arr
+    obj
+}
+
+//! a JSON value: `items` holds an array's elements or an object's values, `keys` the object's keys
+struct JNode {
+    kind : JKind
+    flag : bool
+    num : double
+    str : string
+    keys : array<string>
+    items : array<JNode?>
+}
+
+def private unquote(s : string) : string => slice(s, 1, length(s) - 1)
+
+[bison(tokens = JTok, lexer = json_lex)]
+def json(var p : Parser) : JNode? {
+    rule("value", "object")
+    rule("value", "array")
+    rule("value", "STRING") <| $(t : FlexToken) => new JNode(kind = JKind.str, str = unquote(text(p.lexer, t)))
+    rule("value", "NUMBER") <| $(t : FlexToken) => new JNode(kind = JKind.number, num = to_double(text(p.lexer, t)))
+    rule("value", "TRUE") <| $() => new JNode(kind = JKind.boolean, flag = true)
+    rule("value", "FALSE") <| $() => new JNode(kind = JKind.boolean)
+    rule("value", "NULL") <| $() => new JNode(kind = JKind.null_value)
+    rule("object", "'\{' '\}'") <| $() => new JNode(kind = JKind.obj)
+    rule("object", "'\{' members '\}'") <| $(m : JNode?) => m
+    rule("members", "STRING ':' value") <| $(k : FlexToken; v : JNode?) {
+        var o = new JNode(kind = JKind.obj)
+        o.keys |> push(unquote(text(p.lexer, k)))
+        o.items |> push(v)
+        return o
+    }
+    rule("members", "members ',' STRING ':' value") <| $(o : JNode?; k : FlexToken; v : JNode?) {
+        o.keys |> push(unquote(text(p.lexer, k)))
+        o.items |> push(v)
+        return o
+    }
+    rule("array", "'[' ']'") <| $() => new JNode(kind = JKind.arr)
+    rule("array", "'[' elements ']'") <| $(a : JNode?) => a
+    rule("elements", "value") <| $(v : JNode?) {
+        var a = new JNode(kind = JKind.arr)
+        a.items |> push(v)
+        return a
+    }
+    rule("elements", "elements ',' value") <| $(a : JNode?; v : JNode?) {
+        a.items |> push(v)
+        return a
+    }
+}
+
+// a node back as compact JSON-like text, numbers as daslang prints a double
+def private show(n : JNode?) : string {
+    if (n.kind == JKind.obj) {
+        let pairs <- [for (k, v in n.keys, n.items); k + ":" + show(v)]
+        return "\{" + join(pairs, ",") + "\}"
+    } elif (n.kind == JKind.arr) {
+        let elems <- [for (v in n.items); show(v)]
+        return "[" + join(elems, ",") + "]"
+    } elif (n.kind == JKind.str) {
+        return "\"{n.str}\""
+    } elif (n.kind == JKind.number) {
+        return "{n.num}"
+    } elif (n.kind == JKind.boolean) {
+        return n.flag ? "true" : "false"
+    }
+    return "null"
+}
+
+let private JSON_DOC = "\{
+    \"name\": \"dasBison\",
+    \"version\": 3,
+    \"big\": 1.5e3,
+    \"stable\": false,
+    \"license\": null,
+    \"tags\": [\"parser\", \"lalr\", \"daslang\"],
+    \"empty_list\": [],
+    \"empty_map\": \{\},
+    \"author\": \{
+        \"name\": \"lookibed\",
+        \"active\": true
+    \},
+    \"matrix\": [
+        [1, 2],
+        [3, 4]
+    ],
+    \"nested\": [\{\"a\": [\{\}]\}],
+    \"last\": \"end\"
+\}"
+
+[test(description = "a JSON grammar through [bison] builds a tree of a type the test defines from a 20-line document: pass-through rules, list rules that grow a node, empty containers")]
+def test_json(t : T?) {
+    t |> equal(length(split(JSON_DOC, "\n")), 20)
+    var p : Parser
+    parser_open(p, JSON_DOC, "doc.json")
+    let root = json(p)
+    t |> equal(p.err, "")
+    t |> success(!p.failed)
+    t |> equal(show(root), "\{name:\"dasBison\",version:3,big:1500,stable:false,license:null,tags:[\"parser\",\"lalr\",\"daslang\"],empty_list:[],empty_map:\{\},author:\{name:\"lookibed\",active:true\},matrix:[[1,2],[3,4]],nested:[\{a:[\{\}]\}],last:\"end\"\}")
+    parser_open(p, "[1, -0.25, \"two\", [true, null]]")
+    t |> equal(show(json(p)), "[1,-0.25,\"two\",[true,null]]")
+}
+
+[test(description = "a malformed JSON document fails at the refused token's line and column with the expected set, and the parser returns the default value")]
+def test_json_errors(t : T?) {
+    var p : Parser
+    let missing_comma = replace(JSON_DOC, "\"active\": true", "\"active\": true \"extra\": 1")
+    parser_open(p, missing_comma, "doc.json")
+    t |> success(json(p) == null)
+    t |> equal(p.err, "doc.json:12:24: unexpected STRING, expected one of: '\}', ','")
+    parser_open(p, "\{\"a\": [1, 2,]\}", "short.json")
+    t |> success(json(p) == null)
+    t |> equal(p.err, "short.json:1:13: unexpected ']', expected one of: STRING, NUMBER, TRUE, FALSE, NULL, '\{', '['")
+    parser_open(p, "[1, 2", "cut.json")
+    json(p)
+    t |> equal(p.err, "cut.json:1:6: unexpected end of input, expected one of: ',', ']'")
+    parser_open(p, "\{\"k\" 1\}", "")
+    json(p)
+    t |> equal(p.err, "1:6: unexpected NUMBER, expected one of: ':'")
 }

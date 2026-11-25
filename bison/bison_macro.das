@@ -65,6 +65,14 @@ class private ReturnScan : AstVisitor {
     }
 }
 
+//! marks every node of the driver generated, so a complexity lint counts the user's actions (their
+//! own functions) and not the parser skeleton
+class private MarkGenerated : AstVisitor {
+    def override preVisitExpression(var expr : ExpressionPtr) {
+        expr.genFlags.generated = true
+    }
+}
+
 //! whether an action yields a value: its declared result type, else a `return <value>` in it
 def private block_yields(var blk : ExprBlock?) : bool {
     if (blk.returnType != null && !blk.returnType.isAuto) {
@@ -253,7 +261,8 @@ def private action_name(spec : BisonSpec; i : int) : string => "{spec.func_name}
 //! the value stack of rule `r`
 def private stack_name(r : int) : string => "bison`v`{r}"
 
-//! production `i`'s action as a private function: the parser, then the action's arguments
+//! production `i`'s action as a private function: the parser, then the action's arguments, each
+//! `var` - the value is the action's own, popped off its stack
 def private add_action(spec : BisonSpec; i : int; parser_type : TypeDeclPtr; var errors : das_string) : bool {
     let r & = unsafe(spec.rules[i])
     let at = r.site.at
@@ -262,7 +271,10 @@ def private add_action(spec : BisonSpec; i : int; parser_type : TypeDeclPtr; var
     var pvar <- new Variable(at = at, name := spec.param, _type <- clone_type(parser_type))
     fn.arguments |> emplace(pvar)
     for (a in r.action.arguments) {
-        fn.arguments |> emplace_new <| clone_variable(a)
+        var arg <- clone_variable(a)
+        arg._type.flags.constant = false
+        arg._type.flags.removeConstant = true
+        fn.arguments |> emplace(arg)
     }
     let declared = r.action.returnType != null && !r.action.returnType.isAuto
     fn.result = declared ? clone_type(r.action.returnType) : new TypeDecl(at = at, baseType = r.yields ? Type.autoinfer : Type.tVoid, flags = TypeDeclFlags.removeConstant | TypeDeclFlags.removeRef)
@@ -492,11 +504,18 @@ def private make_driver(spec : BisonSpec; g : TextGrammar; t : LalrTables; vals 
             $b(arms)
         }
     }
-    var body = new ExprBlock(at = at)
+    var body : ExpressionPtr = new ExprBlock(at = at)
     for (part in [head, stacks, checks, run]) {
         for (e in part) {
-            body.list |> push(e)
+            (body as ExprBlock).list |> push(e)
         }
+    }
+    var marker = new MarkGenerated()
+    make_visitor(*marker) $(adapter) {
+        visit_expression(body, adapter)
+    }
+    unsafe {
+        delete marker
     }
     return body
 }
