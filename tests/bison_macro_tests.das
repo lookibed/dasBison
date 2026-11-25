@@ -8,6 +8,7 @@ require bison/lalr
 require bison/prec
 require flex/flex_macro
 require daslib/strings_boost
+require _compile_issues
 
 enum CTok {
     NUM = 256
@@ -436,4 +437,26 @@ def test_json_errors(t : T?) {
     parser_open(p, "\{\"k\" 1\}", "")
     json(p)
     t |> equal(p.err, "1:6: unexpected NUMBER, expected one of: ':'")
+}
+
+//! a module under the style lint, complexity limit 5, with a `[bison]` grammar of `rules`
+def private linted_module(rules : string) : string {
+    return ("options gen2\noptions _cyclomatic_complexity = 5\nrequire daslib/style_lint\n"
+        + "require flex/flex_macro\nrequire bison/bison_macro\n"
+        + "enum E \{\n    NUM = 256\n\}\n[flex]\ndef lx(var lx : FlexLexer) : bool \{\n"
+        + "    rule(\"[0-9]+\") \{\n        lx |> emit(E.NUM)\n    \}\n\}\n"
+        + "[bison(tokens = E, lexer = lx)]\ndef calc(var p : Parser) : int \{\n{rules}\}\n")
+}
+
+[test(description = "the style lint reads an action as the user's code: an action past the complexity limit is reported at its rule, the driver around it is not")]
+def test_action_is_linted(t : T?) {
+    let branchy = ("    rule(\"e\", \"NUM\") <| $(n : FlexToken) \{\n        let v = length(text(p.lexer, n))\n"
+        + "        if (v == 1) return 1\n        if (v == 2) return 2\n        if (v == 3) return 3\n"
+        + "        if (v == 4) return 4\n        if (v == 5) return 5\n        return v\n    \}\n")
+    let issues = compile_issues("lint1.das", linted_module(branchy))
+    t |> has_issue(issues, "STYLE037: function 'calc`bison`act`0' has cyclomatic complexity 6")
+    t |> has_issue(issues, "lint1.das:17:")
+    t |> equal(count(issues, "STYLE037"), 1)
+    let plain = "    rule(\"e\", \"NUM\") <| $(n : FlexToken) => length(text(p.lexer, n))\n"
+    t |> equal(compile_issues("lint2.das", linted_module(plain)), "")
 }

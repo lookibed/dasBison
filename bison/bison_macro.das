@@ -67,8 +67,7 @@ class private ReturnScan : AstVisitor {
     }
 }
 
-//! marks every node of the driver generated, so a complexity lint counts the user's actions (their
-//! own functions) and not the parser skeleton
+//! marks every node of the driver generated, so the style lints skip the parser skeleton
 class private MarkGenerated : AstVisitor {
     def override preVisitExpression(var expr : ExpressionPtr) {
         expr.genFlags.generated = true
@@ -286,13 +285,15 @@ def private add_action(spec : BisonSpec; i : int; parser_type : TypeDeclPtr;
     let r & = unsafe(spec.rules[i])
     let at = r.site.at
     var fn <- new Function(at = at, atDecl = at, name := action_name(spec, i),
-                           flags = FunctionFlags.generated | FunctionFlags.privateFunction)
+                           flags = FunctionFlags.privateFunction)
     var pvar <- new Variable(at = at, name := spec.param, _type <- clone_type(parser_type))
+    pvar.flags.generated = true
     fn.arguments |> emplace(pvar)
     for (a in r.action.arguments) {
         var arg <- clone_variable(a)
         arg._type.flags.constant = false
         arg._type.flags.removeConstant = true
+        arg.flags.generated = true
         fn.arguments |> emplace(arg)
     }
     let declared = r.action.returnType != null && !r.action.returnType.isAuto
@@ -304,6 +305,7 @@ def private add_action(spec : BisonSpec; i : int; parser_type : TypeDeclPtr;
     body.arguments |> clear
     body.returnType = null
     body.blockFlags.isClosure = false
+    body.genFlags.generated = true
     fn.body = body
     if (!(compiling_module() |> add_function(fn))) {
         errors := "can't add the action function of {rule_name(spec, i)}"

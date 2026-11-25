@@ -2,12 +2,11 @@ options gen2
 options indenting = 4
 
 require dastest/testing_boost public
-require daslib/rtti
-require daslib/ast
 require daslib/strings_boost
 require strings
 require flex/flex_macro
 require bison/bison_macro
+require _compile_issues
 
 enum RTok {
     NUM = 256
@@ -66,8 +65,10 @@ def test_calc(t : T?) {
     t |> equal(run_calc("(1+2)*3"), "9")
     t |> equal(run_calc("2-3-4"), "-5")
     t |> equal(run_calc("-2*-(3+1)"), "8")
-    t |> equal(run_calc("1+"), "0 calc.txt:1:3: unexpected end of input, expected one of: '-', '(', NUM")
-    t |> equal(run_calc("2*(3\n+)"), "0 calc.txt:2:2: unexpected ')', expected one of: '-', '(', NUM")
+    t |> equal(run_calc("1+"),
+               "0 calc.txt:1:3: unexpected end of input, expected one of: '-', '(', NUM")
+    t |> equal(run_calc("2*(3\n+)"),
+               "0 calc.txt:2:2: unexpected ')', expected one of: '-', '(', NUM")
 }
 
 // the dangling else: one shift/reduce conflict, declared by %expect 1 and resolved by the default shift
@@ -146,21 +147,6 @@ def test_line_preserving_source(t : T?) {
     t |> equal(lines[8], "\}")
 }
 
-//! compiles `text` as the virtual file `name`; "" when it compiled clean, the issue text otherwise
-def private compile_issues(name, text : string) : string {
-    var out = ""
-    var inscope access <- make_file_access("")
-    set_file_source(access, name, text)
-    using() $(var mg : ModuleGroup) {
-        using() $(var cop : CodeOfPolicies) {
-            compile_file(name, access, unsafe(addr(mg)), cop) $(ok; _program; issues) {
-                out = ok ? "" : string(issues)
-            }
-        }
-    }
-    return out
-}
-
 //! a module with a lexer of `NUM` and punctuation and a `%bison~ bad : int` grammar of `decls` and
 //! `rules`; the `%bison~` header is line 20
 def private reader_module(decls, rules : string) : string {
@@ -180,39 +166,39 @@ def test_clean_module(t : T?) {
 def test_errors(t : T?) {
     t |> run("$n on a quoted character") @(t : T?) {
         let issues = compile_issues("e1.das", reader_module("", "e : NUM  \{ $$ = 1 \}\n  | '(' e ')'  \{ $$ = $1 \}\n  ;\n"))
-        t |> success(find(issues, "$1 is '(', a quoted character, which carries no value") >= 0, issues)
-        t |> success(find(issues, "e1.das:23:") >= 0, issues)
+        t |> has_issue(issues, "$1 is '(', a quoted character, which carries no value")
+        t |> has_issue(issues, "e1.das:23:")
     }
     t |> run("$n on a rule that yields nothing") @(t : T?) {
         let issues = compile_issues("e2.das", reader_module("", "e : v NUM  \{ $$ = $1 \}\n  ;\nv : '('  \{ \}\n  ;\n"))
-        t |> success(find(issues, "$1 is 'v', a rule that yields no value") >= 0, issues)
-        t |> success(find(issues, "e2.das:22:") >= 0, issues)
+        t |> has_issue(issues, "$1 is 'v', a rule that yields no value")
+        t |> has_issue(issues, "e2.das:22:")
     }
     t |> run("$n past the right-hand side") @(t : T?) {
         let issues = compile_issues("e3.das", reader_module("", "e : NUM  \{\n    $$ = 1\n\}\n  | '(' e ')'  \{\n    $$ = $4\n\}\n  ;\n"))
-        t |> success(find(issues, "$4: the right-hand side of 'e' has 3 symbols") >= 0, issues)
-        t |> success(find(issues, "e3.das:26:") >= 0, issues)
+        t |> has_issue(issues, "$4: the right-hand side of 'e' has 3 symbols")
+        t |> has_issue(issues, "e3.das:26:")
     }
     t |> run("an unknown token name") @(t : T?) {
         let issues = compile_issues("e4.das", reader_module("", "e : NUM  \{ $$ = 1 \}\n  | NOPE  \{ $$ = 2 \}\n  ;\n"))
-        t |> success(find(issues, "'NOPE' is neither a rule nor a token") >= 0, issues)
-        t |> success(find(issues, "e4.das:23:") >= 0, issues)
+        t |> has_issue(issues, "'NOPE' is neither a rule nor a token")
+        t |> has_issue(issues, "e4.das:23:")
     }
     t |> run("no %rules line") @(t : T?) {
         let src = replace(reader_module("%left '+'\n", ""), "%rules\n", "")
         let issues = compile_issues("e5.das", src)
-        t |> success(find(issues, "the rules section starts at a line `%rules`") >= 0, issues)
-        t |> success(find(issues, "e5.das:22:") >= 0, issues)
+        t |> has_issue(issues, "the rules section starts at a line `%rules`")
+        t |> has_issue(issues, "e5.das:22:")
     }
     t |> run("a rule without ';'") @(t : T?) {
         let issues = compile_issues("e6.das", reader_module("", "e : NUM  \{ $$ = 1 \}\n  | v  \{ $$ = $1 \}\n\nv : NUM  \{ $$ = 2 \}\n  ;\n"))
-        t |> success(find(issues, "the rule 'e' ends with ';'") >= 0, issues)
-        t |> success(find(issues, "e6.das:23:") >= 0, issues)
+        t |> has_issue(issues, "the rule 'e' ends with ';'")
+        t |> has_issue(issues, "e6.das:23:")
     }
     t |> run("$n of an untyped rule") @(t : T?) {
         let issues = compile_issues("e7.das", reader_module("", "e : v  \{ $$ = $1 \}\n  ;\nv : NUM  \{ $$ = 2 \}\n  ;\n"))
-        t |> success(find(issues, "$1 is 'v', whose type the text does not declare: `%type <Type> v`") >= 0, issues)
-        t |> success(find(issues, "e7.das:22:") >= 0, issues)
+        t |> has_issue(issues, "$1 is 'v', whose type the text does not declare: `%type <Type> v`")
+        t |> has_issue(issues, "e7.das:22:")
     }
 }
 
@@ -220,5 +206,5 @@ def test_errors(t : T?) {
 def test_action_error_line(t : T?) {
     let issues = compile_issues("a1.das", reader_module("", "e : NUM  \{\n    let s : string = 1\n    $$ = 1\n\}\n  ;\n"))
     t |> success(!empty(issues), "the action must not compile")
-    t |> success(find(issues, "a1.das:23:") >= 0, issues)
+    t |> has_issue(issues, "a1.das:23:")
 }

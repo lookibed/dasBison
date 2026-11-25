@@ -179,7 +179,9 @@ result.
 
 Each action becomes a private function `<name>`bison`act`<i>(var p : Parser; args...)`, its result
 type the block's or inferred. Its arguments are `var`: the value is popped off its stack and
-belongs to the action, which can grow a list it was handed and return it. The block's body runs
+belongs to the action, which can grow a list it was handed and return it. The parameter and the
+arguments are generated variables - the grammar fixes their number and the macro their `var` - so
+the argument lints skip them, while the body is linted as the user wrote it. The block's body runs
 in that function, so `p` - the parser function's parameter, under its own name - is in scope and
 nothing else of the parser is.
 
@@ -222,8 +224,9 @@ so the arguments never depend on evaluation order), calls the action function, p
 on the rule's stack and the goto state on the state stack. An if chain keeps every arm an
 ordinary block the interpreter and LLVM both take as written; the arms are as many as the
 grammar's productions. `LR_MAX_REDUCES` bounds the reduces between two shifts, as in `lr_parse`.
-Every node of the driver is marked generated, so a complexity lint over the user's module counts
-the actions, which are functions of their own, and not the skeleton.
+Every node of the driver is marked generated and the action functions are not, so the style
+lints over the user's module read each action as the user's code - its complexity, its length -
+and skip the skeleton.
 
 ## Parse errors {#macro-errors}
 
