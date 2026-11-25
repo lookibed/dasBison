@@ -223,7 +223,7 @@ def private dangling_else() : TextGrammar {
     return <- grammar_from_text(rules, precs, "", tokens)
 }
 
-[test(description = "the dangling else through [bison] shifts by default, binding else to the inner if; the warning the macro gives names the conflict as bison -v does, and expected = 1 silences exactly it")]
+[test(description = "the dangling else through [bison] shifts by default, binding else to the inner if; conflict_warning, on the report of the grammar ifs declares, names the conflict as bison -v does, and expected = 1 silences exactly it")]
 def test_dangling_else(t : T?) {
     var p : Parser
     parser_open(p, "if if x else x")
@@ -239,6 +239,24 @@ def test_dangling_else(t : T?) {
     t |> equal(conflict_warning("ifs", res.report, 1), "")
     t |> equal(conflict_warning("ifs", res.report, 0),
                replace(warning, "conflicts, resolved", "conflicts (expected = 0), resolved"))
+}
+
+[test(description = "conflict_warning still warns when expected matches the shift/reduce count but a reduce/reduce conflict is left, and when it misses the count")]
+def test_warning_reduce_reduce(t : T?) {
+    let rules <- [TextRule(lhs = "s", rhs = "a Y"), TextRule(lhs = "s", rhs = "b Y"),
+                  TextRule(lhs = "s", rhs = "X Y"), TextRule(lhs = "a", rhs = "X"),
+                  TextRule(lhs = "b", rhs = "X")]
+    let precs : array<TextPrec>
+    let g <- grammar_from_text(rules, precs, "", { "X" => 1, "Y" => 2 })
+    t |> equal(g.err, "")
+    let res <- resolve_precedence(build_lalr(g.builder, g.root), g.builder)
+    t |> equal(res.report.shift_reduce, 1)
+    t |> equal(res.report.reduce_reduce, 1)
+    let head = "[bison] mixed: 1 shift/reduce, 1 reduce/reduce conflicts"
+    t |> success(starts_with(conflict_warning("mixed", res.report, 1),
+                             "{head} (expected = 1), resolved by default:\nState "))
+    t |> success(starts_with(conflict_warning("mixed", res.report, -1), "{head}, resolved"))
+    t |> success(starts_with(conflict_warning("mixed", res.report, 2), "{head} (expected = 2)"))
 }
 
 [test(description = "a right-hand side reads names, quoted characters with escapes and a trailing %prec, and names what is wrong with a bad one")]
@@ -580,4 +598,16 @@ def test_root_and_structure(t : T?) {
     let dead = compile_issues("dead.das", loop)
     t |> has_issue(dead, "rule 'x' derives no terminal string")
     t |> has_issue(dead, "dead.das:17:")
+}
+
+[test(description = "expected = N takes an int of 0 or more: a string or a negative count fails the compile")]
+def test_expected_arg(t : T?) {
+    let tok = "enum Tok \{\n    NUM = 256\n\}\n"
+    let why = "[bison] expected = N takes the number of shift/reduce conflicts, an int of 0 or more"
+    for (arg in ["\"1\"", "-1"]) {
+        let src = replace(tok_module(tok), "lexer = lx)", "lexer = lx, expected = {arg})")
+        t |> has_issue(compile_issues("expected.das", src), why)
+    }
+    let zero = replace(tok_module(tok), "lexer = lx)", "lexer = lx, expected = 0)")
+    t |> equal(compile_issues("expected0.das", zero), "")
 }

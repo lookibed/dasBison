@@ -564,6 +564,29 @@ def private string_arg(args : AnnotationArgumentList; name, absent : string) : s
     return arg is tString ? arg as tString : absent
 }
 
+//! The annotation's arguments: the token enum, the lexer, and `expected` (-1 when absent).
+struct private BisonArgs {
+    tokens : string
+    lexer : string
+    expected : int
+    err : string
+}
+
+//! the annotation's arguments; `err` when `tokens` or `lexer` is missing or `expected` is not an
+//! int of 0 or more
+def private bison_args(args : AnnotationArgumentList) : BisonArgs {
+    var ba = BisonArgs(tokens = string_arg(args, "tokens", ""),
+                       lexer = string_arg(args, "lexer", ""))
+    let expected_arg = find_arg(args, "expected")
+    ba.expected = expected_arg is tInt ? expected_arg as tInt : -1
+    if (empty(ba.tokens) || empty(ba.lexer)) {
+        ba.err = "[bison] needs tokens = <the token enum> and lexer = <the [flex] function>"
+    } elif (!(expected_arg is nothing) && ba.expected < 0) {
+        ba.err = "[bison] expected = N takes the number of shift/reduce conflicts, an int of 0 or more"
+    }
+    return ba
+}
+
 //! enum `name` as the compiling module sees it: its own, else the one module it requires (directly
 //! or through a public require) that declares it; `err` when none or several do
 def private visible_enum(name : string) : tuple<en : Enumeration?; err : string> {
@@ -698,15 +721,14 @@ class BisonMacro : AstFunctionAnnotation {
             errors := "[bison] takes one argument: var p : Parser"
             return false
         }
-        let tokens_name = string_arg(args, "tokens", "")
-        let lexer = string_arg(args, "lexer", "")
-        if (empty(tokens_name) || empty(lexer)) {
-            errors := "[bison] needs tokens = <the token enum> and lexer = <the [flex] function>"
+        let ba = bison_args(args)
+        if (!empty(ba.err)) {
+            errors := ba.err
             return false
         }
-        let expected_arg = find_arg(args, "expected")
-        let expected = expected_arg is tInt ? expected_arg as tInt : -1
-        let tk = enum_kinds(tokens_name)
+        let lexer = ba.lexer
+        let expected = ba.expected
+        let tk = enum_kinds(ba.tokens)
         if (!empty(tk.err)) {
             errors := tk.err
             return false

@@ -212,7 +212,8 @@ A conflict precedence leaves to yacc's default is reported as a compile warning
 (`to_log(LOG_WARNING, ...)`): `conflict_warning` names the counts and the cells in `format_report`'s
 `bison -v` words. `[bison(expected = N)]` is yacc's `%expect N`: it silences the warning when the
 grammar has exactly `N` shift/reduce conflicts and no reduce/reduce one, and a different count
-warns with the expectation named. A reduce/reduce conflict always warns. The argument is
+warns with the expectation named. A reduce/reduce conflict always warns. `expected` is an int of 0
+or more; any other value fails the compile, as `%expect` with no count does. The argument is
 `expected` because `expect` is a reserved word in daslang and annotation argument names accept
 only a few keywords.
 
