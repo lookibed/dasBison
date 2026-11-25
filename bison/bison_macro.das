@@ -278,12 +278,12 @@ def private add_action(spec : BisonSpec; i : int; parser_type : TypeDeclPtr; var
     return true
 }
 
-//! a call to production `i`'s action: on the parser and on `args`, or on default values of the
-//! action's argument types when `args` is empty and the action takes some (for `typedecl`)
-def private action_call(spec : BisonSpec; i : int; args : array<string>; at : LineInfo) : ExpressionPtr {
+//! a call to production `i`'s action: on the parser and on `args`, or with `for_type` on default
+//! values of the action's argument types (a call `typedecl` reads and never runs)
+def private action_call(spec : BisonSpec; i : int; args : array<string>; for_type : bool; at : LineInfo) : ExpressionPtr {
     var call = new ExprCall(at = at, name := action_name(spec, i))
     call.arguments |> emplace_new <| new ExprVar(at = at, name := spec.param)
-    if (!empty(args)) {
+    if (!for_type) {
         for (a in args) {
             call.arguments |> emplace_new <| new ExprVar(at = at, name := a)
         }
@@ -309,7 +309,7 @@ def private make_stacks(spec : BisonSpec; vals : BisonValues; at : LineInfo) : a
     for (r, k in count(), vals.rule_action) {
         continue if (k < 0)
         let vname = stack_name(r)
-        var call = action_call(spec, k, none, at)
+        var call = action_call(spec, k, none, true, at)
         out |> push_from <| qmacro_block_to_array() {
             var $i(vname) : array<typedecl($e(call)) -const>
         }
@@ -329,7 +329,7 @@ def private make_type_checks(spec : BisonSpec; g : TextGrammar; vals : BisonValu
         let at = rl.site.at
         let lhs_stack = stack_name(lhs)
         if (rl.action != null) {
-            var mine = action_call(spec, i, none, at)
+            var mine = action_call(spec, i, none, true, at)
             let msg = "[bison] {rule_name(spec, i)}: the action returns another type than the one of {rule_name(spec, k)}"
             out |> push <| qmacro(static_assert(typeinfo stripped_typename($e(mine)) == typeinfo stripped_typename($i(lhs_stack)[0]), $v(msg)))
         } else {
@@ -368,16 +368,10 @@ def private make_pops(vals : BisonValues; prod : Production; i : int; pass_args 
     return <- pops
 }
 
-//! the reduce by production `i` (table production `i + 1`): pop its states and values, run the
-//! action or pass the one value on, push the result and the goto state
-def private make_arm(spec : BisonSpec; g : TextGrammar; vals : BisonValues; i, nrules : int; g_goto : string) : ExpressionPtr {
+//! production `i`'s value: its action's result, the one value passed on, or the action run for its
+//! effect; pushed on the stack of `lhs` when the rule yields
+def private make_reduce(spec : BisonSpec; vals : BisonValues; i, lhs : int; args : array<string>; at : LineInfo) : array<ExpressionPtr> {
     let rl & = unsafe(spec.rules[i])
-    let at = rl.site.at
-    let prod & = unsafe(g.builder.prods[i])
-    let lhs = prod.lhs
-    let nrhs = length(prod.rhs)
-    var pops <- make_pops(vals, prod, i, rl.action == null || !empty(rl.action.arguments))
-    let args <- [for (j in vals.values[i]); "bison`a{j}"]
     let lhs_stack = stack_name(lhs)
     var reduce : array<ExpressionPtr>
     if (rl.action == null) {
@@ -388,15 +382,30 @@ def private make_arm(spec : BisonSpec; g : TextGrammar; vals : BisonValues; i, n
             }
         }
     } elif (rl.yields) {
-        var call = action_call(spec, i, args, at)
+        var call = action_call(spec, i, args, false, at)
         reduce |> push_from <| qmacro_block_to_array() {
             var bison`r = $e(call)
             $i(lhs_stack) |> emplace(bison`r)
         }
     } else {
-        var call = action_call(spec, i, args, at)
+        var call = action_call(spec, i, args, false, at)
         reduce |> push(call)
     }
+    return <- reduce
+}
+
+//! the reduce by production `i` (table production `i + 1`): pop its states and values, run the
+//! action or pass the one value on, push the result and the goto state
+def private make_arm(spec : BisonSpec; g : TextGrammar; vals : BisonValues; i, nrules : int; g_goto : string) : ExpressionPtr {
+    let rl & = unsafe(spec.rules[i])
+    let at = rl.site.at
+    let prod & = unsafe(g.builder.prods[i])
+    let lhs = prod.lhs
+    let nrhs = length(prod.rhs)
+    let pass_args = rl.action == null || !empty(rl.action.arguments)
+    var pops <- make_pops(vals, prod, i, pass_args)
+    let args <- [for (j in vals.values[i]); "bison`a{j}"; where pass_args]
+    var reduce <- make_reduce(spec, vals, i, lhs, args, at)
     let tprod = i + 1
     var head <- qmacro_block_to_array() {
         bison`states |> resize(length(bison`states) - $v(nrhs))
@@ -474,8 +483,8 @@ def private make_driver(spec : BisonSpec; g : TextGrammar; t : LalrTables; vals 
                 return <- bison`root
             }
             if (bison`act == 0 || bison`reduces >= $v(max_reduces)) {
-                let bison`expected <- bison_expected($i(g_action), $i(g_goto), $i(g_lhs), $i(g_len), $v(nterms), $v(nrules), bison`states)
-                bison_syntax_error($i(p), $i(g_names), bison`term, $v(eof), bison`expected)
+                bison_syntax_error($i(p), $i(g_names), bison`term, $v(eof),
+                                   bison_expected($i(g_action), $i(g_goto), $i(g_lhs), $i(g_len), $v(nterms), $v(nrules), bison`states))
                 return <- bison`none
             }
             bison`reduces++
