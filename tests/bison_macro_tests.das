@@ -611,3 +611,24 @@ def test_expected_arg(t : T?) {
     let zero = replace(tok_module(tok), "lexer = lx)", "lexer = lx, expected = 0)")
     t |> equal(compile_issues("expected0.das", zero), "")
 }
+
+//! the enum `tok_module`'s grammar reads `NUM` from
+let private TOK_ENUM = "enum Tok \{\n    NUM = 256\n\}\n"
+
+//! a module whose `[bison]` body is `body`, over `Tok.NUM`; the body's first line is line 15
+def private grammar_module(body : string) : string =>
+    replace(tok_module(TOK_ENUM), "    rule(\"e\", \"NUM\") <| $(n : FlexToken) => 1\n", body)
+
+[test(description = "two actions of one rule returning different types, or a pass-through of a value of another type, fail the compile at the rule's line")]
+def test_type_agreement(t : T?) {
+    let two_types = ("    rule(\"e\", \"NUM\") <| $(n : FlexToken) => 1\n"
+        + "    rule(\"e\", \"e NUM\") <| $(a : int; n : FlexToken) => \"two\"\n")
+    let issues = compile_issues("types1.das", grammar_module(two_types))
+    t |> has_issue(issues, "rule(\"e\", \"e NUM\"): the action returns another type than the one of rule(\"e\", \"NUM\")")
+    t |> has_issue(issues, "types1.das:16:")
+    let passed = ("    rule(\"e\", \"NUM\") <| $(n : FlexToken) => 1\n    rule(\"e\", \"s\")\n"
+        + "    rule(\"s\", \"NUM\") <| $(n : FlexToken) => \"s\"\n")
+    let pass_issues = compile_issues("types2.das", grammar_module(passed))
+    t |> has_issue(pass_issues, "rule(\"e\", \"s\"): the value passed on is not of the type of rule(\"e\", \"NUM\")")
+    t |> has_issue(pass_issues, "types2.das:16:")
+}
