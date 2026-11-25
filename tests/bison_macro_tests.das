@@ -460,3 +460,11 @@ def test_action_is_linted(t : T?) {
     let plain = "    rule(\"e\", \"NUM\") <| $(n : FlexToken) => length(text(p.lexer, n))\n"
     t |> equal(compile_issues("lint2.das", linted_module(plain)), "")
 }
+
+[test(description = "a grammar that names no token fails the compile at its first rule, not at the empty kind map")]
+def test_no_token(t : T?) {
+    let issues = compile_issues("notok.das", linted_module("    rule(\"e\", \"\") <| $() => 1\n"))
+    t |> has_issue(issues, "the grammar names no token")
+    t |> has_issue(issues, "notok.das:17:")
+    t |> success(find(issues, "dimension") < 0, issues)
+}

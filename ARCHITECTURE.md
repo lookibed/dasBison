@@ -243,7 +243,8 @@ chain from the state stack the refused token was read on ends in a shift or acce
 driver keeps the read-time states its reduces remove - computed by `bison_expected` from the
 emitted tables, so it is exact and in terminal order. A lexer error is the parser's
 error as the lexer worded it. A grammar error - an unknown name, a bad right-hand side, an action
-whose arguments do not match its values - fails the compile at the rule's line.
+whose arguments do not match its values - fails the compile at the rule's line; a grammar that
+names no token fails it at its first rule, since the kind map would have no entry.
 
 ## Two front ends, one back end {#reader}
 

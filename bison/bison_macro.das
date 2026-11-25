@@ -612,6 +612,10 @@ def private add_tables(spec : BisonSpec; g : TextGrammar; t : LalrTables; at : L
     for (k in g.kinds) {
         max_kind = max(max_kind, k)
     }
+    if (max_kind < 0) {
+        let msg = "[bison] the grammar names no token: a parser reads at least one named or quoted token"
+        return fail_rule(msg, spec.rules[0].site, errors)
+    }
     if (max_kind > BISON_MAX_KIND) {
         errors := "[bison] token kind {max_kind} is past {BISON_MAX_KIND}, the largest the kind map holds"
         return false
