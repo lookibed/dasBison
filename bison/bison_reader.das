@@ -110,7 +110,8 @@ def private skip_space(var s : RScan) {
 def private quoted_char(var s : RScan) : string {
     let start = s.pos
     let k = peek(s, 1) == '\\' ? 3 : 2
-    if (peek(s, 1) < 0 || peek(s, 1) == '\n' || peek(s, k) != '\'' || (k == 2 && peek(s, 1) == '\'')) {
+    if (peek(s, 1) < 0 || peek(s, 1) == '\n' || peek(s, k) != '\''
+        || (k == 2 && peek(s, 1) == '\'')) {
         fail(s, "a quoted character is one character between single quotes")
         return ""
     }
@@ -197,6 +198,33 @@ def private action_dollar(var s : RScan; var w : StringBuilderWriter; var alt : 
     w |> write("_{n}")
 }
 
+//! one daslang block comment of an action, copied as written, the `/*` at the cursor: nested
+//! comments balanced, as daslang reads them, lines counted
+def private action_comment(var s : RScan; var w : StringBuilderWriter) {
+    var depth = 0
+    while (empty(s.err)) {
+        let c = peek(s)
+        if (c < 0) {
+            fail(s, "a comment in the action ends at the end of the rules")
+            return
+        }
+        let pair = c == '/' && peek(s, 1) == '*' ? 1 : (c == '*' && peek(s, 1) == '/' ? -1 : 0)
+        if (pair != 0) {
+            depth += pair
+            w |> write_char(c)
+            w |> write_char(peek(s, 1))
+            s.pos += 2
+            return if (depth == 0)
+            continue
+        }
+        if (c == '\n') {
+            s.line++
+        }
+        w |> write_char(c)
+        s.pos++
+    }
+}
+
 //! a `{ ... }` of action code, the open brace at the cursor: braces balanced outside strings,
 //! characters and comments, lines counted, `$$` and `$n` rewritten
 def private action_code(var s : RScan; var w : StringBuilderWriter; var alt : RAlt) {
@@ -219,6 +247,8 @@ def private action_code(var s : RScan; var w : StringBuilderWriter; var alt : RA
             w |> write(slice(s.d, start, s.pos))
         } elif (c == '/' && peek(s, 1) == '/') {
             w |> write(rest_of_line(s))
+        } elif (c == '/' && peek(s, 1) == '*') {
+            action_comment(s, w)
         } elif (c == '$') {
             action_dollar(s, w, alt)
         } elif (is_ident(c, true)) {

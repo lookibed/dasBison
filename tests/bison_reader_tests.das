@@ -147,6 +147,20 @@ def test_line_preserving_source(t : T?) {
     t |> equal(lines[8], "\}")
 }
 
+[test(description = "a block comment in an action is copied as written: a brace in it does not close the action, a $n in it is not read, nested comments balance and its lines are kept")]
+def test_action_comments(t : T?) {
+    let text = (" e : int, tokens = T, lexer = lx\n%rules\ne : N \{ /* } */ $$ = 1 \}\n"
+        + "  | N N \{ /* $1 */ $$ = 2 \}\n  | N N N \{ /* a /* nested } */\n  comment */ $$ = 3 \} ;\n")
+    let out = bison_reader_source(text)
+    t |> equal(out.err, "")
+    let lines <- split(out.source, "\n")
+    t |> equal(count(out.source, "\n"), count(text, "\n") + 1)
+    t |> equal(lines[2], "rule(\"e\", \"N\") <| $() : int \{ /* } */ return 1 \}")
+    t |> equal(lines[3], "rule(\"e\", \"N N\") <| $() : int \{ /* $1 */ return 2 \}")
+    t |> equal(lines[4], "rule(\"e\", \"N N N\") <| $() : int \{ /* a /* nested } */")
+    t |> equal(lines[5], "  comment */ return 3 \}")
+}
+
 //! a module with a lexer of `NUM` and punctuation and a `%bison~ bad : int` grammar of `decls` and
 //! `rules`; the `%bison~` header is line 20
 def private reader_module(decls, rules : string) : string {

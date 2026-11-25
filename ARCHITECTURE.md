@@ -264,7 +264,9 @@ and the other tools that skip reader text skip all of it. A rule is `name : alte
 an alternative is names, quoted characters, an optional `%prec NAME` and an optional action in
 braces, last; `%empty` or nothing is the epsilon alternative; `//` and `/* */` comment the rules.
 
-An action is daslang code with `$$` and `$n` rewritten. `$n` is the n-th symbol of the
+An action is daslang code with `$$` and `$n` rewritten; its strings, characters and comments -
+`/* */` nested, as daslang reads them - are copied as written, so a brace or a `$` in them is not
+read. `$n` is the n-th symbol of the
 alternative's right-hand side, valueless terminals counted. An action that reads no `$n` takes no
 argument; one that reads any takes every value of the right-hand side, as `[bison]` requires, as
 `_n : T` for each symbol `n` that carries a value - a named token as its `FlexToken`, a rule that
