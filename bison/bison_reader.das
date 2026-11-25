@@ -198,6 +198,31 @@ def private action_dollar(var s : RScan; var w : StringBuilderWriter; var alt : 
     w |> write("_{n}")
 }
 
+//! whether the `return` that ends at the cursor carries a value: the next token on its line,
+//! past blanks, block comments and opening parentheses, is neither `;`, `}`, `)` nor the line's end
+def private return_has_value(s : RScan) : bool {
+    var k = 0
+    var depth = 0
+    while (true) {
+        let c = peek(s, k)
+        let next = peek(s, k + 1)
+        if (depth > 0) {
+            return false if (c < 0)
+            depth += c == '/' && next == '*' ? 1 : (c == '*' && next == '/' ? -1 : 0)
+            k += (c == '/' && next == '*') || (c == '*' && next == '/') ? 2 : 1
+        } elif (c == '/' && next == '*') {
+            depth = 1
+            k += 2
+        } elif (is_blank(c) || c == '(') {
+            k++
+        } else {
+            return !(c < 0 || c == '\n' || c == ';' || c == '}' || c == ')'
+                     || (c == '/' && next == '/'))
+        }
+    }
+    return false
+}
+
 //! one daslang block comment of an action, copied as written, the `/*` at the cursor: nested
 //! comments balanced, as daslang reads them, lines counted
 def private action_comment(var s : RScan; var w : StringBuilderWriter) {
@@ -255,8 +280,7 @@ def private action_code(var s : RScan; var w : StringBuilderWriter; var alt : RA
             let word = ident(s)
             w |> write(word)
             if (word == "return") {
-                let after = peek(s, 1)
-                alt.writes ||= is_blank(peek(s)) && after != '\n' && after != '}' && after != ';'
+                alt.writes ||= return_has_value(s)
             }
         } else {
             if (c == '\n') {

@@ -271,7 +271,8 @@ alternative's right-hand side, valueless terminals counted. An action that reads
 argument; one that reads any takes every value of the right-hand side, as `[bison]` requires, as
 `_n : T` for each symbol `n` that carries a value - a named token as its `FlexToken`, a rule that
 yields as its type - and `$n` becomes `_n`. A rule yields when the text types it or one of its
-actions writes `$$` or returns a value. The types come from the text: the root's is the header's,
+actions writes `$$` or returns a value - a `return` whose next token on its line, past blanks,
+block comments and opening parentheses, is not `;`, `}` or `)`. The types come from the text: the root's is the header's,
 another rule's its `%type`; an action of a typed rule declares that result type, and an untyped
 rule's type is inferred by `[bison]` from its first action (`#values`). `$$ = value` becomes
 `return value`, so it ends the action; a value that has to move is returned with `return <- $n`.

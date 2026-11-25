@@ -161,6 +161,23 @@ def test_action_comments(t : T?) {
     t |> equal(lines[5], "  comment */ return 3 \}")
 }
 
+// `e` reads `$2`, so its action takes every value: `v`'s too when `v` yields one
+def private return_probe(v_action : string) : BisonReaderOutput {
+    return bison_reader_source(" e : int, tokens = T, lexer = lx\n%rules\ne : v N \{ $$ = $2 \} ;\n"
+        + "v : '(' \{ {v_action} \} ;\n")
+}
+
+[test(description = "an action returns a value when the token after return, past blanks, comments and parentheses, is not ; } ) or the line's end: return(x) yields, return  ; does not")]
+def test_return_value(t : T?) {
+    let paren = return_probe("return(0)")
+    t |> equal(paren.err, "$1 is 'v', whose type the text does not declare: `%type <Type> v`")
+    for (bare in ["return  ;", "return /* none */ ;", "return // none\n"]) {
+        let out = return_probe(bare)
+        t |> equal(out.err, "", bare)
+        t |> success(find(out.source, "<| $(_2 : FlexToken) : int") >= 0, out.source)
+    }
+}
+
 //! a module with a lexer of `NUM` and punctuation and a `%bison~ bad : int` grammar of `decls` and
 //! `rules`; the `%bison~` header is line 20
 def private reader_module(decls, rules : string) : string {
