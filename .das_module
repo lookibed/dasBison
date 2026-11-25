@@ -3,7 +3,7 @@ require daslib/fio
 
 [export]
 def initialize(project_path : string) {
-    for (path in ["lalr", "bytes", "prec"]) {
+    for (path in ["lalr", "bytes", "prec", "grammar_text"]) {
         register_native_path("bison", "{path}", "{project_path}/bison/{path}.das")
     }
 }
