@@ -111,10 +111,6 @@ def private prod_prec(t : LalrTables; gb : LalrBuilder; p : int) : int2 {
     return last >= 0 ? term_prec(gb, last) : int2(0, 0)
 }
 
-def private is_shift(a : int) : bool => a > 0 && a != LALR_ACCEPT
-
-def private reduce_action(p : int) : int => p == 0 ? LALR_ACCEPT : -(1 + p)
-
 // an action as `bison -v` words it
 def private bison_action(t : LalrTables; a : int) : string {
     if (a == LALR_ACCEPT) {

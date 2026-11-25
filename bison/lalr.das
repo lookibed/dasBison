@@ -53,6 +53,12 @@ struct LalrTables {
 
 let LALR_ACCEPT = 2147483647   //!< the end-of-input action that marks acceptance
 
+//! Whether action `a` is a shift: positive, and not the accept.
+def is_shift(a : int) : bool => a > 0 && a != LALR_ACCEPT
+
+//! The action that reduces by table production `p`: the accept for production 0, the augmented start.
+def reduce_action(p : int) : int => p == 0 ? LALR_ACCEPT : -(1 + p)
+
 //! A terminal id as a right-hand-side symbol.
 def term_sym(term : int) : int => term
 
@@ -413,7 +419,7 @@ def private build_tables(var b : Builder; var t : LalrTables) {
             for (c in cl) {
                 let p & = unsafe(b.prods[c.it.prod])
                 continue if (c.it.dot < length(p.rhs))
-                let want = c.it.prod == 0 ? LALR_ACCEPT : -(1 + c.it.prod)
+                let want = reduce_action(c.it.prod)
                 if (c.la != hash) {
                     add_action(b, t, si, c.la, want)
                 } else {
@@ -541,7 +547,7 @@ def build_lalr(gb : LalrBuilder; root : int) : LalrTables {
     t.prods <- b.prods
     if (b.first_cell >= 0) {
         let have = t.action[b.first_cell]
-        let kind = have > 0 && have != LALR_ACCEPT ? "shift/reduce" : "reduce/reduce"
+        let kind = is_shift(have) ? "shift/reduce" : "reduce/reduce"
         let on = t.term_names[b.first_cell % t.nterms]
         let what = describe_action(t, b.first_want)
         t.first_conflict = "{kind} conflict in state {b.first_cell / t.nterms} on {on}: {what}"
