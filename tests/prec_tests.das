@@ -89,6 +89,7 @@ def test_left(t : T?) {
     t |> equal(res.tables.conflicts, 0)
     t |> equal(length(res.tables.alt), 0)
     t |> equal(res.tables.first_conflict, "")
+    t |> equal(format_report(res.report), "")
     t |> equal(tb.conflicts, 4)
     t |> equal(length(tb.alt), 4)
     t |> equal(parse_tree(res.tables, gb, "1 + 2 * 3"), "+(1, *(2, 3))")
@@ -221,6 +222,10 @@ def test_unresolved_default_shift(t : T?) {
     t |> equal(describe_action(tb, c.kept[0]), "reduce S ::= if C then S")
     let r <- lr_parse(res.tables, tokens(gb, "if cond then if cond then other else other"))
     t |> success(r.ok)
+    let text = ("State 7 conflicts: 1 shift/reduce\n" +
+        "    else  shift, and go to state 8\n" +
+        "    else  [reduce using rule 1 (S ::= if C then S)]\n")
+    t |> equal(format_report(res.report), text)
 }
 
 [test(description = "%nonassoc then below %nonassoc else settles the dangling else by precedence: the shift, no conflict left")]
@@ -260,10 +265,36 @@ def test_reduce_reduce(t : T?) {
         t |> success(starts_with(res.tables.first_conflict, "reduce/reduce conflict"),
                      res.tables.first_conflict)
         t |> equal(describe_action(tb, res.report.cells[0].chosen), "reduce {order[0]} ::= x")
+        let text = format_report(res.report)
+        t |> success(find(text, "conflicts: 1 reduce/reduce\n") >= 0, text)
+        t |> success(find(text, "    <end>  [reduce using rule 4 ({order[1]} ::= x)]\n") >= 0, text)
         let r <- lr_parse(res.tables, tokens(gb, "x"))
         t |> success(r.ok)
         t |> equal(describe_prod(tb, r.reductions[0]), "{order[0]} ::= x")
     }
+}
+
+[test(description = "a cell with a shift and two reduces is one shift/reduce and one reduce/reduce conflict in the report, the shift chosen")]
+def test_report_mixed_cell(t : T?) {
+    var gb : LalrBuilder
+    prod(gb, "S", "A y")
+    prod(gb, "S", "B y")
+    prod(gb, "S", "x y")
+    prod(gb, "A", "x")
+    prod(gb, "B", "x")
+    let res <- resolve_precedence(build_lalr(gb, rule_id(gb, "S")), gb)
+    t |> equal(res.report.by_default, 1)
+    t |> equal(res.report.shift_reduce, 1)
+    t |> equal(res.report.reduce_reduce, 1)
+    t |> equal(length(res.report.cells[0].kept), 2)
+    let cell = res.report.cells[0].state * res.tables.nterms + term_id(gb, "y")
+    t |> equal(res.tables.alt?[cell] ?? [0], res.report.cells[0].kept)
+    let text = ("State 4 conflicts: 1 shift/reduce, 1 reduce/reduce\n" +
+        "    y  shift, and go to state 7\n" +
+        "    y  [reduce using rule 4 (A ::= x)]\n" +
+        "    y  [reduce using rule 5 (B ::= x)]\n")
+    t |> equal(format_report(res.report), text)
+    t |> success(lr_parse(res.tables, tokens(gb, "x y")).ok)
 }
 
 [test(description = "tables with no conflict come back equal and the report is empty")]

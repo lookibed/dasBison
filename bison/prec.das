@@ -6,6 +6,7 @@ module prec shared public
 
 require bison/lalr
 require math
+require daslib/strings_boost
 
 // Precedence and associativity as yacc declares them, kept in the builder's `prec_terms` and
 // `prec_prods`; `build_lalr` never reads them.
@@ -75,6 +76,8 @@ struct PrecCell {
     chosen : int                //!< the cell's action in the resolved tables; 0 for an error
     removed : array<int>        //!< actions precedence took out of the cell
     kept : array<int>           //!< the default's losers, still in the resolved tables' `alt`
+    token : string              //!< the terminal's name
+    words : array<string>       //!< bison's words for `chosen`, then for each of `kept`
 }
 
 //! Every conflicting cell, how many each way, and bison's conflict counts over the default ones.
@@ -113,6 +116,18 @@ def private prod_prec(t : LalrTables; gb : LalrBuilder; p : int) : int2 {
 def private is_shift(a : int) : bool => a > 0 && a != LALR_ACCEPT
 
 def private reduce_action(p : int) : int => p == 0 ? LALR_ACCEPT : -(1 + p)
+
+// an action as `bison -v` words it
+def private bison_action(t : LalrTables; a : int) : string {
+    if (a == LALR_ACCEPT) {
+        return "accept"
+    } elif (a > 0) {
+        return "shift, and go to state {a - 1}"
+    } elif (a < 0) {
+        return "reduce using rule {-1 - a} ({describe_prod(t, -1 - a)})"
+    }
+    return "error (nonassociative)"
+}
 
 def private resolve_cell(var t : LalrTables; gb : LalrBuilder; cell : int; var rep : PrecReport) {
     var c = PrecCell(state = cell / t.nterms, term = cell % t.nterms)
@@ -173,6 +188,9 @@ def private resolve_cell(var t : LalrTables; gb : LalrBuilder; cell : int; var r
         }
     }
     t.action[cell] = c.chosen
+    c.token = t.term_names[c.term]
+    c.words |> push(bison_action(t, c.chosen))
+    c.words |> push_from([for (a in c.kept); bison_action(t, a)])
     rep.cells |> emplace(c)
 }
 
@@ -198,4 +216,37 @@ def resolve_precedence(t : LalrTables; gb : LalrBuilder) : PrecResult {
         }
     }
     return <- res
+}
+
+// a default cell's share of bison's per-state counts: (shift/reduce, reduce/reduce)
+def private default_counts(c : PrecCell) : int2 =>
+    is_shift(c.chosen) ? int2(1, length(c.kept) - 1) : int2(0, length(c.kept))
+
+//! The default-resolved cells as `bison -v` lists them: `State N conflicts: K shift/reduce` (and
+//! `M reduce/reduce`) per state, then per cell the token with the chosen action and, in brackets,
+//! each action it won over. Empty when precedence resolved every cell.
+def format_report(report : PrecReport) : string {
+    return build_string() $(var w) {
+        var state = -1
+        for (i, c in count(), report.cells) {
+            continue if (c.how != PrecHow.by_default)
+            if (c.state != state) {
+                state = c.state
+                var n = int2(0, 0)
+                for (j in range(i, length(report.cells))) {
+                    let d & = unsafe(report.cells[j])
+                    break if (d.state != state)
+                    n += d.how == PrecHow.by_default ? default_counts(d) : int2(0, 0)
+                }
+                let sr = n.x > 0 ? "{n.x} shift/reduce" : ""
+                let rr = n.y > 0 ? "{n.y} reduce/reduce" : ""
+                let sep = n.x > 0 && n.y > 0 ? ", " : ""
+                w |> write("State {state} conflicts: {sr}{sep}{rr}\n")
+            }
+            for (k, words in count(), c.words) {
+                let shown = k == 0 ? words : "[{words}]"
+                w |> write("    {c.token}  {shown}\n")
+            }
+        }
+    }
 }
