@@ -324,6 +324,11 @@ def test_rhs_text(t : T?) {
     t |> equal(r.prec, "UMINUS")
     t |> equal(parse_rhs("'\\'' '\\\\'").syms[0].ch, '\'')
     t |> equal(parse_rhs("'\\'' '\\\\'").syms[1].ch, '\\')
+    let escapes <- parse_rhs("'\\n' '\\t' '\\r' '\\q'")
+    t |> equal([for (x in escapes.syms); x.ch], ['\n', '\t', '\r', 'q'])
+    t |> equal(parse_rhs("'-' e %prec '*'").prec, "'*'")
+    t |> equal(parse_rhs("e %precedence").err,
+               "unexpected '%' at offset 2: a symbol is a name or a quoted character")
     t |> equal(length(parse_rhs("").syms), 0)
     t |> equal(parse_rhs("a 'bc'").err,
                "a quoted character is one character between single quotes, at offset 2")
