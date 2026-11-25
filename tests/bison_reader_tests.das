@@ -226,15 +226,60 @@ def private return_probe(v_action : string) : BisonReaderOutput {
         + "v : '(' \{ {v_action} \} ;\n")
 }
 
-[test(description = "an action returns a value when the token after return, past blanks, comments and parentheses, is not ; } ) or the line's end: return(x) yields, return  ; does not")]
+[test(description = "an action returns a value when the token after return, past blanks and comments, is not ; } ) or the line's end: return(0) and a parenthesis that opens a multi-line value yield; return before ; } ) a comment or the line's end does not")]
 def test_return_value(t : T?) {
-    let paren = return_probe("return(0)")
-    t |> equal(paren.err, "$1 is 'v', whose type the text does not declare: `%type <Type> v`")
-    for (bare in ["return  ;", "return /* none */ ;", "return // none\n"]) {
+    for (valued in ["return(0)", "return (\n0)", "return /* c */ 0"]) {
+        let out = return_probe(valued)
+        t |> equal(out.err, "$1 is 'v', whose type the text does not declare: `%type <Type> v`",
+                   valued)
+    }
+    for (bare in ["return  ;", "return /* none */ ;", "return // none\n", "return", "return\n",
+                  "(return)"]) {
         let out = return_probe(bare)
         t |> equal(out.err, "", bare)
         t |> success(find(out.source, "<| $(_2 : FlexToken) : int") >= 0, out.source)
     }
+}
+
+// line `n` of the reader's output, or its error
+def private out_line(out : BisonReaderOutput; n : int) : string {
+    return "error at {out.line}: {out.err}" if (!empty(out.err))
+    let lines <- split(out.source, "\n")
+    return n < length(lines) ? lines[n] : "no line {n}"
+}
+
+// the reader's output for `rules` after a header of `e : int` and an empty declaration section
+def private rules_source(rules : string) : BisonReaderOutput =>
+    bison_reader_source(" e : int, tokens = T, lexer = lx\n%rules\n" + rules)
+
+[test(description = "the reader lexes comments between rules, quoted quotes and braces, character literals and // in actions, $ before a non-digit, %empty, %prec with a quoted character, CRLF and nested types in the header and %type")]
+def test_reader_lexing(t : T?) {
+    let between = rules_source("e : f \{ $$ = 1 \} ;\n// one \} here\n/* two\n \} */\nf : N ;\n")
+    t |> equal(out_line(between, 6), "rule(\"f\", \"N\")")
+    let quote = rules_source("e : N '\\'' '\{' N '\}' \{ $$ = 1 \} ;\n")
+    t |> equal(out_line(quote, 2),
+               "rule(\"e\", \"N '\\\\'' '\\\{' N '\\\}'\") <| $() : int \{ return 1 \}")
+    let chars = rules_source("e : N \{ let c = '\}'; $$ = 1 // \}\n \}\n  | N N \{ $$ = 2 \} ;\n")
+    t |> equal(out_line(chars, 2),
+               "rule(\"e\", \"N\") <| $() : int \{ let c = '\}'; return 1 // \}")
+    t |> equal(out_line(chars, 4), "rule(\"e\", \"N N\") <| $() : int \{ return 2 \}")
+    let dollar = rules_source("e : N \{ $$ = $x \} ;\n")
+    t |> equal(out_line(dollar, 2), "rule(\"e\", \"N\") <| $() : int \{ return $x \}")
+    let none = rules_source("e : f N \{ $$ = 1 \} ;\nf : %empty | N ;\n")
+    t |> equal(out_line(none, 3), "rule(\"f\", \"\"); rule(\"f\", \"N\")")
+    let prec = bison_reader_source(" e : int, tokens = T, lexer = lx\n%left '*'\n%rules\n"
+        + "e : '-' N %prec '*' \{ $$ = 1 \} ;\n")
+    t |> equal(out_line(prec, 3), "rule(\"e\", \"'-' N %prec '*'\") <| $() : int \{ return 1 \}")
+    let lf = (" e : int, tokens = T, lexer = lx\n%left '+'\n%rules\ne : e '+' N \{\n $$ = 1 \}\n"
+        + "  | N \{ $$ = 2 \}\n  ;\n")
+    let crlf = bison_reader_source(replace(lf, "\n", "\r\n"))
+    t |> equal(crlf.err, "")
+    t |> equal(replace(crlf.source, "\r", ""), bison_reader_source(lf).source)
+    let types = bison_reader_source(" e : array<tuple<int, float>>, tokens = T, lexer = lx\n"
+        + "%type <table<string; array<int>>> f\n%rules\ne : f \{ $$ = [(1, 2.0)] \} ;\n"
+        + "f : N \{ $$ = \{\"a\" => [1]\} \} ;\n")
+    t |> equal(out_line(types, 0), "[bison(tokens = T, lexer = lx)] def e(var p : Parser) : array<tuple<int, float>> \{")
+    t |> equal(out_line(types, 4), "rule(\"f\", \"N\") <| $() : table<string; array<int>> \{ return \{\"a\" => [1]\} \}")
 }
 
 //! a module with a lexer of `NUM` and punctuation and a `%bison~ bad : int` grammar of `decls` and

@@ -200,7 +200,7 @@ def private action_dollar(var s : RScan; var w : StringBuilderWriter; var alt : 
 }
 
 //! whether the `return` that ends at the cursor carries a value: the next token on its line,
-//! past blanks, block comments and opening parentheses, is neither `;`, `}`, `)` nor the line's end
+//! past blanks and block comments, is neither `;`, `}`, `)` nor the line's end
 def private return_has_value(s : RScan) : bool {
     var k = 0
     var depth = 0
@@ -214,7 +214,7 @@ def private return_has_value(s : RScan) : bool {
         } elif (c == '/' && next == '*') {
             depth = 1
             k += 2
-        } elif (is_blank(c) || c == '(') {
+        } elif (is_blank(c)) {
             k++
         } else {
             return !(c < 0 || c == '\n' || c == ';' || c == '}' || c == ')'
