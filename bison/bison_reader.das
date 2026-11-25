@@ -408,7 +408,7 @@ struct private RDecls {
     start_line : int
     types : table<string; string>
     type_lines : table<string; int>
-    precs : array<tuple<line : int; call : string>>
+    calls : array<tuple<line : int; call : string>>    //!< `prec_*` and `root` calls, in line order
 }
 
 //! a type up to the first `,` outside brackets
@@ -543,7 +543,7 @@ def private declaration(var s : RScan; var decls : RDecls; line : string) {
         if (empty(names)) {
             fail(s, "{head} names its tokens")
         }
-        decls.precs |> push((line = s.line, call = "prec_{slice(head, 1)}({join(names, ", ")})"))
+        decls.calls |> push((line = s.line, call = "prec_{slice(head, 1)}({join(names, ", ")})"))
     } elif (head == "%expect" && length(items) == 2) {
         var digits = !empty(items[1])
         for (c in items[1]) {
@@ -556,6 +556,7 @@ def private declaration(var s : RScan; var decls : RDecls; line : string) {
     } elif (head == "%start" && length(items) == 2) {
         decls.start = items[1]
         decls.start_line = s.line
+        decls.calls |> push((line = s.line, call = "root({das_string_literal(decls.start)})"))
     } elif (head == "%type") {
         type_line(s, decls, line)
     } else {
@@ -690,11 +691,8 @@ def bison_reader_source(text : string) : BisonReaderOutput {
     let rr <- plan_rules(s, decls, alts, root)
     let expected = decls.expected >= 0 ? ", expected = {decls.expected}" : ""
     var o = ROut(text = "[bison(tokens = {decls.tokens}, lexer = {decls.lexer}{expected})] def {decls.name}(var p : Parser) : {decls.result} \{")
-    for (pl in decls.precs) {
-        put(o, pl.line, pl.call)
-    }
-    if (!empty(decls.start)) {
-        put(o, decls.start_line, "root({das_string_literal(root)})")
+    for (dc in decls.calls) {
+        put(o, dc.line, dc.call)
     }
     for (a in alts) {
         put(o, a.line, rule_call(s, rr, a))

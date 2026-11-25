@@ -258,8 +258,9 @@ driver - and both forms of a grammar give the same tables, values and errors.
 
 The declarations are `%left` / `%right` / `%nonassoc` (names as written, quoted characters
 included), `%expect N` (the annotation's `expected`), `%start NAME` (the root; without it the first
-rule, as in yacc) and `%type <Type> names`; `//` and `/* */` on a declaration line comment it. The line `%rules` separates them from the rules rather
-than yacc's inner `%%`: the text ends at the first `%%`, as every reader's does, so the formatter
+rule, as in yacc) and `%type <Type> names`; `//` and `/* */` on a declaration line comment it.
+Each declaration's call - a precedence call, `root` - goes on the declaration's own line. The line
+`%rules` separates them from the rules rather than yacc's inner `%%`: the text ends at the first `%%`, as every reader's does, so the formatter
 and the other tools that skip reader text skip all of it. A rule is `name : alternative | ... ;`;
 an alternative is names, quoted characters, an optional `%prec NAME` and an optional action in
 braces, last; `%empty` or nothing is the epsilon alternative; `//` and `/* */` comment the rules.
