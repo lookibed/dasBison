@@ -96,7 +96,7 @@ only because none was dropped (`#precedence`).
 `build_lalr` sets `err` and builds no tables when the root is not a rule, a production names an
 undeclared terminal or rule, or a rule the root reaches derives no terminal string (a rule with
 no production included). The last is the error dasLR1 reports, with the same text, naming the
-first such rule by id. A rule the root never reaches is not checked: a grammar keeps its helpers.
+first such rule; `err_rule` holds its name, so a front end places the error at the rule's line. A rule the root never reaches is not checked: a grammar keeps its helpers.
 
 ## The driver {#driver}
 
@@ -148,8 +148,8 @@ terminal with the expected set the reduce chains compute (`#driver`).
 
 `[bison(tokens = Enum, lexer = scan)]` on `def name(var p : Parser) : T` reads the body as a
 grammar when the module compiles. The body holds calls only: `rule("lhs", "rhs")`, with or without
-an action block, `prec_left` / `prec_right` / `prec_nonassoc("tok", ...)`, and `root("rule")` (the
-first rule's left-hand side when absent, as in yacc). A right-hand side is text: an identifier
+an action block, `prec_left` / `prec_right` / `prec_nonassoc("tok", ...)`, and one `root("rule")`, its
+argument a literal (the first rule's left-hand side when absent, as in yacc). A right-hand side is text: an identifier
 that is some rule's left-hand side is that rule, one that is a member of `Enum` is that token with
 the member's value as its kind, a quoted character (`'+'`, `'\''`) is the token whose kind is its
 byte, an empty string is the epsilon production, and a trailing `%prec NAME` gives the production

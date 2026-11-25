@@ -148,7 +148,7 @@ def test_reduce_reduce(t : T?) {
     t |> success(find(lines[0], "on <end>: reduce A ::= x | reduce B ::= x") >= 0, lines[0])
 }
 
-[test(description = "a reachable rule that derives no terminal string, or has no production, fails the build; an unreachable one does not")]
+[test(description = "a reachable rule that derives no terminal string, or has no production, fails the build naming the rule; an unreachable one does not")]
 def test_ill_formed(t : T?) {
     {
         var gb : LalrBuilder
@@ -156,6 +156,7 @@ def test_ill_formed(t : T?) {
         prod(gb, "A", "A y")
         let tb <- build_lalr(gb, rule_id(gb, "S"))
         t |> equal(tb.err, "rule 'A' derives no terminal string")
+        t |> equal(tb.err_rule, "A")
         t |> equal(tb.nstates, 0)
         t |> success(!lr_parse(tb, tokens(gb, "x")).ok)
     }

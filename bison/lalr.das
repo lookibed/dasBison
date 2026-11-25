@@ -48,6 +48,7 @@ struct LalrTables {
     conflicts : int
     first_conflict : string
     err : string                //!< "" when the build succeeded, else why not
+    err_rule : string           //!< the rule `err` is about, "" when it is about no rule
 }
 
 let LALR_ACCEPT = 2147483647   //!< the end-of-input action that marks acceptance
@@ -502,6 +503,7 @@ def private check_well_formed(b : Builder; var t : LalrTables) {
     for (r in range(b.nrules)) {
         if (reach[r] && !productive[r]) {
             t.err = "rule '{t.rule_names[r]}' derives no terminal string"
+            t.err_rule = t.rule_names[r]
             return
         }
     }

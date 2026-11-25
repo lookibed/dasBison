@@ -544,3 +544,22 @@ def test_token_enum_visibility(t : T?) {
     let own = "require tok1\nrequire tok2\nenum Tok \{\n    NUM = 256\n\}\n"
     t |> equal(compile_issues("vis4.das", tok_module(own), [tok1, tok2]), "")
 }
+
+[test(description = "root takes one rule name literal, once; a rule that derives no terminal string fails at its line")]
+def test_root_and_structure(t : T?) {
+    let tok = "enum Tok \{\n    NUM = 256\n\}\n"
+    let variable = replace(tok_module(tok), "    rule(\"e\"",
+                           "    root(\"e\" + \"\")\n    rule(\"e\"")
+    let named = compile_issues("root1.das", variable)
+    t |> has_issue(named, "root takes a rule name literal: root(\"rule\")")
+    t |> has_issue(named, "root1.das:15:")
+    let twice = replace(tok_module(tok), "    rule(\"e\"",
+                        "    root(\"e\")\n    root(\"e\")\n    rule(\"e\"")
+    let again = compile_issues("root2.das", twice)
+    t |> has_issue(again, "root is named once; root(\"e\") came first")
+    t |> has_issue(again, "root2.das:16:")
+    let loop = replace(tok_module(tok), "<| $(n : FlexToken) => 1", "<| $(n : FlexToken) => 1\n    rule(\"e\", \"e x\")\n    rule(\"x\", \"x NUM\")")
+    let dead = compile_issues("dead.das", loop)
+    t |> has_issue(dead, "rule 'x' derives no terminal string")
+    t |> has_issue(dead, "dead.das:17:")
+}

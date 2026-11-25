@@ -93,8 +93,7 @@ def private block_yields(var blk : ExprBlock?) : bool {
     var scan = new ReturnScan()
     make_visitor(*scan) $(adapter) {
         for (s in blk.list) {
-            var copy = clone_expression(s)
-            visit_expression(copy, adapter)
+            visit_expression(s, adapter)
         }
     }
     let yields = scan.values > 0
@@ -141,6 +140,17 @@ def private collect_prec(var spec : BisonSpec; call : ExprCall?) {
     spec.prec_sites |> push(call)
 }
 
+def private collect_root(var spec : BisonSpec; call : ExprCall?) {
+    let name = length(call.arguments) == 1 ? const_string(call.arguments[0]) : (ok = false, value = "")
+    if (!name.ok) {
+        fail_at(spec, "root takes a rule name literal: root(\"rule\")", call)
+    } elif (!empty(spec.root)) {
+        fail_at(spec, "root is named once; root(\"{spec.root}\") came first", call)
+    } else {
+        spec.root = name.value
+    }
+}
+
 def private collect(var spec : BisonSpec; body : ExprBlock?) {
     for (st in body.list) {
         return if (!empty(spec.err))
@@ -154,9 +164,8 @@ def private collect(var spec : BisonSpec; body : ExprBlock?) {
         } elif (call.name == "prec_left" || call.name == "prec_right"
                 || call.name == "prec_nonassoc") {
             collect_prec(spec, call)
-        } elif (call.name == "root" && length(call.arguments) == 1
-                && call.arguments[0] is ExprConstString) {
-            spec.root = string((call.arguments[0] as ExprConstString).value)
+        } elif (call.name == "root") {
+            collect_root(spec, call)
         } else {
             fail_at(spec, "only rule, prec_left, prec_right, prec_nonassoc and root calls belong in a [bison] body, not {call.name}", call)
         }
@@ -716,8 +725,10 @@ class BisonMacro : AstFunctionAnnotation {
         }
         let built <- build_lalr(g.builder, g.root)
         if (!empty(built.err)) {
-            errors := "[bison] {built.err}"
-            return false
+            let rule = g.builder.rule_index?[built.err_rule] ?? -1
+            let at_rule = find_index_if(g.builder.prods) $(pr) => pr.lhs == rule
+            return fail_rule("[bison] {built.err}", at_rule >= 0 ? spec.rules[at_rule].site : null,
+                             errors)
         }
         let res <- resolve_precedence(built, g.builder)
         let warning = conflict_warning(spec.func_name, res.report, expected)
