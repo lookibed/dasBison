@@ -615,9 +615,13 @@ def test_expected_arg(t : T?) {
 //! the enum `tok_module`'s grammar reads `NUM` from
 let private TOK_ENUM = "enum Tok \{\n    NUM = 256\n\}\n"
 
+//! a module whose `[bison]` body is `body` after the three lines of `head`, which declare `Tok`;
+//! the annotation is line 13, the body's first line line 15
+def private bison_module(head, body : string) : string =>
+    replace(tok_module(head), "    rule(\"e\", \"NUM\") <| $(n : FlexToken) => 1\n", body)
+
 //! a module whose `[bison]` body is `body`, over `Tok.NUM`; the body's first line is line 15
-def private grammar_module(body : string) : string =>
-    replace(tok_module(TOK_ENUM), "    rule(\"e\", \"NUM\") <| $(n : FlexToken) => 1\n", body)
+def private grammar_module(body : string) : string => bison_module(TOK_ENUM, body)
 
 [test(description = "two actions of one rule returning different types, or a pass-through of a value of another type, fail the compile at the rule's line")]
 def test_type_agreement(t : T?) {
@@ -631,4 +635,74 @@ def test_type_agreement(t : T?) {
     let pass_issues = compile_issues("types2.das", grammar_module(passed))
     t |> has_issue(pass_issues, "rule(\"e\", \"s\"): the value passed on is not of the type of rule(\"e\", \"NUM\")")
     t |> has_issue(pass_issues, "types2.das:16:")
+}
+
+//! one compile-error case: the enum and the `[bison]` body, the message, and the line it is at
+struct private MacroError {
+    head : string
+    body : string
+    message : string
+    line : int
+}
+
+//! a typed action of `NUM`, the rule every case that is not about the grammar's shape uses
+let private NUM_RULE = "    rule(\"e\", \"NUM\") <| $(n : FlexToken) => 1\n"
+
+[test(description = "every [bison] error has its message and its line: call shapes in the body, the four action checks, a root that yields nothing, the token enum's values, a kind past the map, an error of a precedence line, a bad right-hand side, an empty grammar, the annotation's own arguments")]
+def test_macro_errors(t : T?) {
+    let shape = "rule(\"lhs\", \"rhs\") or rule(\"lhs\", \"rhs\") <| $(values) \{ action \} expected"
+    let body_only = "only rule, prec_left, prec_right, prec_nonassoc and root calls belong in a [bison] body"
+    let cases <- [
+        MacroError(head = TOK_ENUM, body = "    rule(\"e\")\n", message = shape, line = 15),
+        MacroError(head = TOK_ENUM, body = "    rule(\"e\", \"NUM\", 1)\n", message = shape,
+                   line = 15),
+        MacroError(head = TOK_ENUM, body = "    let r = \"e\"\n    rule(r, \"NUM\")\n",
+                   message = body_only, line = 15),
+        MacroError(head = TOK_ENUM, body = "{NUM_RULE}    rule(\"e\" + \"\", \"NUM\")\n",
+                   message = shape, line = 16),
+        MacroError(head = TOK_ENUM, body = "    prec_left(1)\n{NUM_RULE}",
+                   message = "prec_left takes token names as strings", line = 15),
+        MacroError(head = TOK_ENUM, body = "{NUM_RULE}    print(\"e\")\n",
+                   message = "{body_only}, not print", line = 16),
+        MacroError(head = TOK_ENUM, body = "{NUM_RULE}    rule(\"e\", \"NUM NUM\")\n",
+                   message = "rule(\"e\", \"NUM NUM\") needs an action: 'e' yields a value and the right-hand side carries 2 values to pass on, not one", line = 16),
+        MacroError(head = TOK_ENUM, body = "{NUM_RULE}    rule(\"e\", \"e NUM\") <| $(a : int; n : FlexToken) \{\n    \}\n",
+                   message = "rule(\"e\", \"e NUM\"): the action returns no value, the one of rule(\"e\", \"NUM\") does", line = 16),
+        MacroError(head = TOK_ENUM,
+                   body = "{NUM_RULE}    rule(\"e\", \"e NUM\") <| $(a : int) => a\n",
+                   message = "rule(\"e\", \"e NUM\"): the action takes 1 arguments, the right-hand side carries 2 values", line = 16),
+        MacroError(head = TOK_ENUM, body = "    rule(\"e\", \"NUM\") <| $(n) => 1\n",
+                   message = "rule(\"e\", \"NUM\"): argument 'n' needs a type", line = 15),
+        MacroError(head = TOK_ENUM,
+                   body = "    rule(\"e\", \"NUM\") <| $(n : FlexToken) \{\n    \}\n",
+                   message = "[bison] the root rule 'e' yields no value", line = 13),
+        MacroError(head = "enum Tok \{\n    NUM = 1 << 8\n\}\n", body = NUM_RULE,
+                   message = "[bison] tokens = Tok: the value of NUM is not an integer literal",
+                   line = 13),
+        MacroError(head = "enum Tok : int64 \{\n    NUM = 5000000000l\n\}\n", body = NUM_RULE,
+                   message = "[bison] tokens = Tok: NUM = 5000000000 does not fit a token kind, an int", line = 13),
+        MacroError(head = "enum Tok \{\n    NUM = 70000\n\}\n", body = NUM_RULE,
+                   message = "[bison] token kind 70000 is past 65535, the largest the kind map holds", line = 13),
+        MacroError(head = "enum Tok \{\n    NUM = 256, PLUS = 43\n\}\n",
+                   body = "    prec_left(\"+\", \"PLUS\")\n{NUM_RULE}",
+                   message = "[bison] PLUS and '+' are the same token kind 43", line = 15),
+        MacroError(head = TOK_ENUM, body = "{NUM_RULE}    rule(\"e\", \"e + NUM\") <| $(a : int; n : FlexToken) => a\n",
+                   message = "[bison] unexpected '+' at offset 2: a symbol is a name or a quoted character", line = 16),
+        MacroError(head = TOK_ENUM, body = "    root(\"e\")\n",
+                   message = "[bison] the grammar has no rules", line = 13),
+        MacroError(head = TOK_ENUM, body = "{NUM_RULE}    root(\"f\")\n",
+                   message = "[bison] root 'f' is not a rule", line = 13)
+    ]
+    for (i, c in count(), cases) {
+        let issues = compile_issues("macro_error{i}.das", bison_module(c.head, c.body))
+        t |> has_issue(issues, c.message)
+        t |> has_issue(issues, "macro_error{i}.das:{c.line}:")
+    }
+    let two_args = replace(grammar_module(NUM_RULE), "def calc(var p : Parser)",
+                           "def calc(var p : Parser; q : int)")
+    t |> has_issue(compile_issues("two_args.das", two_args),
+                   "[bison] takes one argument: var p : Parser")
+    let no_lexer = replace(grammar_module(NUM_RULE), "lexer = lx)", "expected = 0)")
+    t |> has_issue(compile_issues("no_lexer.das", no_lexer),
+                   "[bison] needs tokens = <the token enum> and lexer = <the [flex] function>")
 }

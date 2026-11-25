@@ -343,3 +343,67 @@ def test_action_error_line(t : T?) {
     t |> success(!empty(issues), "the action must not compile")
     t |> has_issue(issues, "a1.das:23:")
 }
+
+//! one reader error: the `%bison~` text, the error, and its 0-based line in the text
+struct private ReaderError {
+    text : string
+    err : string
+    line : int
+}
+
+[test(description = "every reader error names its cause and the line of the text it is on: quoted characters, unterminated strings, comments and actions, $$ without =, $0, directives in a rule, symbols after an action, a rule's name and colon, the header, every declaration and the rules section")]
+def test_reader_errors(t : T?) {
+    let h = " e : int, tokens = T, lexer = lx\n%rules\n"
+    let usage = "the header is `%bison~ name : Type, tokens = TokenEnum, lexer = scan`"
+    let dollars = "$$ is written as `$$ = value`, which returns the value"
+    let cases <- [
+        ReaderError(text = h + "e : '' ;\n",
+                    err = "a quoted character is one character between single quotes", line = 2),
+        ReaderError(text = h + "e : N \{ $$ = \"abc \} ;\n",
+                    err = "a string in the action ends at the end of the rules", line = 3),
+        ReaderError(text = h + "e : N \{ $$ 1 \} ;\n", err = dollars, line = 2),
+        ReaderError(text = h + "e : N \{ $$ == 1 \} ;\n", err = dollars, line = 2),
+        ReaderError(text = h + "e : N \{ $$ = $0 \} ;\n",
+                    err = "$0: the right-hand side of 'e' has 1 symbols", line = 2),
+        ReaderError(text = h + "e : N \{ /* open \} ;\n",
+                    err = "a comment in the action ends at the end of the rules", line = 3),
+        ReaderError(text = h + "e : N \{ $$ = 1 ;\n",
+                    err = "the action ends at the end of the rules", line = 3),
+        ReaderError(text = h + "e : N %token \{ $$ = 1 \} ;\n",
+                    err = "%token in a rule: only %prec and %empty belong there", line = 2),
+        ReaderError(text = h + "e : N %prec \{ $$ = 1 \} ;\n", err = "%prec needs a token name",
+                    line = 2),
+        ReaderError(text = h + "e : N \{ $$ = 1 \} N ;\n",
+                    err = "an action ends its alternative: '|' or ';' expected after it", line = 2),
+        ReaderError(text = h + "e : N @ ;\n", err = "unexpected '@' in the rule 'e'", line = 2),
+        ReaderError(text = h + "'e' : N ;\n",
+                    err = "a rule starts with its name: `name : symbols \{ action \} | ... ;`",
+            line = 2),
+        ReaderError(text = h + "e N ;\n", err = "'e' is followed by ':'", line = 2),
+        ReaderError(text = " e int, tokens = T, lexer = lx\n%rules\ne : N ;\n", err = usage,
+                    line = 0),
+        ReaderError(text = " e : int, tokens = T, lexer = lx, other = 1\n%rules\ne : N ;\n",
+                    err = "{usage}, not `other = 1`", line = 0),
+        ReaderError(text = " e : int, tokens = T\n%rules\ne : N ;\n", err = usage, line = 0),
+        ReaderError(text = " e : int, tokens = T, lexer = lx\n%type int e\n%rules\ne : N ;\n",
+                    err = "%type is `%type <Type> name ...`", line = 1),
+        ReaderError(text = " e : int, tokens = T, lexer = lx\n%left\n%rules\ne : N ;\n",
+                    err = "%left names its tokens", line = 1),
+        ReaderError(text = " e : int, tokens = T, lexer = lx\n%expect x\n%rules\ne : N ;\n",
+                    err = "%expect takes the number of shift/reduce conflicts", line = 1),
+        ReaderError(text = " e : int, tokens = T, lexer = lx\n%token N\n%rules\ne : N ;\n",
+                    err = "a declaration is %left, %right, %nonassoc, %expect N, %start NAME or %type <Type> NAMES", line = 1),
+        ReaderError(text = " e : int, tokens = T, lexer = lx\n%rules\n\n",
+                    err = "the rules section holds no rule", line = 1),
+        ReaderError(text = " e : int, tokens = T, lexer = lx\n%start f\n%rules\ne : N ;\n",
+                    err = "%start f: no rule has that name", line = 1),
+        ReaderError(text = " e : int, tokens = T, lexer = lx\n%type <int> f\n%rules\ne : N ;\n",
+                    err = "%type names 'f', which is no rule", line = 1)
+    ]
+    for (c in cases) {
+        let out = bison_reader_source(c.text)
+        t |> equal(out.err, c.err, c.text)
+        t |> equal(out.line, c.line, c.text)
+        t |> equal(out.source, "", c.text)
+    }
+}
