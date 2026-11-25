@@ -202,29 +202,43 @@ def test_epsilon(t : T?) {
     t |> success(!bad.ok, "a negative token id is refused")
 }
 
-[test(description = "a production of 5000 symbols and lookaheads past terminal 1024 key apart: the item key has no fixed field width")]
+[test(description = "lookaheads 951 and 2999 of one item keep apart over 3000 terminals, and a 4096-terminal production ending in a rule parses: the item key packs no field of fixed width")]
 def test_wide_grammar(t : T?) {
-    var gb : LalrBuilder
-    declare_terms(gb, 3000)
-    let s = rule_id(gb, "S")
-    let a = rule_id(gb, "A")
-    var long_rhs <- [for (i in range(5000)); term_sym(i % 7)]
-    add_production(gb, s, long_rhs)
-    for (k in [1023, 1024, 2047, 2999]) {
-        add_production(gb, s, [rule_sym(a), term_sym(k)])
+    {
+        var gb : LalrBuilder
+        declare_terms(gb, 3000)
+        let s = rule_id(gb, "S")
+        let a = rule_id(gb, "A")
+        add_production(gb, s, [rule_sym(a), term_sym(951)])
+        add_production(gb, s, [rule_sym(a), term_sym(2999)])
+        add_production(gb, a, [term_sym(10)])
+        add_production(gb, a, [term_sym(10), term_sym(11)])
+        let tb <- build_lalr(gb, s)
+        t |> equal(tb.err, "")
+        t |> equal(tb.conflicts, 0)
+        t |> equal(tb.nterms, 3001)
+        for (k in [951, 2999]) {
+            t |> success(lr_parse(tb, [10, k]).ok, "A ::= 10, then {k}")
+            t |> success(lr_parse(tb, [10, 11, k]).ok, "A ::= 10 11, then {k}")
+        }
+        let r <- lr_parse(tb, [10, 1500])
+        t |> success(!r.ok)
+        t |> equal(r.expected, [11, 951, 2999])
     }
-    add_production(gb, a, [term_sym(10)])
-    add_production(gb, a, [term_sym(10), term_sym(11)])
-    let tb <- build_lalr(gb, s)
-    t |> equal(tb.err, "")
-    t |> equal(tb.conflicts, 0)
-    t |> equal(tb.nterms, 3001)
-    t |> success(lr_parse(tb, long_rhs).ok, "the long production")
-    for (k in [1023, 1024, 2047, 2999]) {
-        t |> success(lr_parse(tb, [10, k]).ok, "A then {k}")
-        t |> success(lr_parse(tb, [10, 11, k]).ok, "A x y then {k}")
+    {
+        var gb : LalrBuilder
+        declare_terms(gb, 2)
+        let s = rule_id(gb, "S")
+        let b = rule_id(gb, "B")
+        var long_rhs <- [for (_ in range(4096)); term_sym(0)]
+        long_rhs |> push(rule_sym(b))
+        add_production(gb, s, long_rhs)
+        add_production(gb, b, [term_sym(1)])
+        let tb <- build_lalr(gb, s)
+        t |> equal(tb.err, "")
+        var input <- [for (_ in range(4096)); 0]
+        input |> push(1)
+        let r <- lr_parse(tb, input)
+        t |> success(r.ok, r.err)
     }
-    let r <- lr_parse(tb, [10, 1500])
-    t |> success(!r.ok)
-    t |> equal(r.expected, [11, 1023, 1024, 2047, 2999])
 }
