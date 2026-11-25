@@ -179,7 +179,8 @@ def test_declaration_comments(t : T?) {
 [test(description = "a block comment in an action is copied as written: a brace in it does not close the action, a $n in it is not read, nested comments balance and its lines are kept")]
 def test_action_comments(t : T?) {
     let text = (" e : int, tokens = T, lexer = lx\n%rules\ne : N \{ /* } */ $$ = 1 \}\n"
-        + "  | N N \{ /* $1 */ $$ = 2 \}\n  | N N N \{ /* a /* nested } */\n  comment */ $$ = 3 \} ;\n")
+        + "  | N N \{ /* $1 */ $$ = 2 \}\n  | N N N \{ /* a /* nested } */\n  comment */ $$ = 3 \}\n"
+        + "  | N N N N \{ $$ = 4 \} ;\n")
     let out = bison_reader_source(text)
     t |> equal(out.err, "")
     let lines <- split(out.source, "\n")
@@ -188,6 +189,35 @@ def test_action_comments(t : T?) {
     t |> equal(lines[3], "rule(\"e\", \"N N\") <| $() : int \{ /* $1 */ return 2 \}")
     t |> equal(lines[4], "rule(\"e\", \"N N N\") <| $() : int \{ /* a /* nested } */")
     t |> equal(lines[5], "  comment */ return 3 \}")
+    t |> equal(lines[6], "rule(\"e\", \"N N N N\") <| $() : int \{ return 4 \}")
+}
+
+[test(description = "the reader places every call on its line: two alternatives of one line joined by ;, an action whose string or comment spans lines, an action on the line after its symbols, an empty alternative on the line of its terminator")]
+def test_line_placement(t : T?) {
+    let text = (" e : int, tokens = T, lexer = lx\n%left '+'\n%rules\n"
+        + "e : N \{ $$ = 1 \} | N N \{ $$ = 2 \}\n"
+        + "  | N N N \{ $$ = \"a\nb\" == \"\" ? 3 : 4 \}\n"
+        + "  | N '+'\n    \{ $$ = 5 \}\n"
+        + "  | N N N N \{ /* a\n b */ $$ = 6 \}\n"
+        + "  | f \{ $$ = 7 \}\n  ;\n"
+        + "f : N\n  |\n  ;\n")
+    let out = bison_reader_source(text)
+    t |> equal(out.err, "")
+    let lines <- split(out.source, "\n")
+    t |> equal(count(out.source, "\n"), count(text, "\n") + 1)
+    t |> equal(lines[3], ("rule(\"e\", \"N\") <| $() : int \{ return 1 \}; "
+        + "rule(\"e\", \"N N\") <| $() : int \{ return 2 \}"))
+    t |> equal(lines[4], "rule(\"e\", \"N N N\") <| $() : int \{ return \"a")
+    t |> equal(lines[5], "b\" == \"\" ? 3 : 4 \}")
+    t |> equal(lines[6], "")
+    t |> equal(lines[7], "rule(\"e\", \"N '+'\") <| $() : int \{ return 5 \}")
+    t |> equal(lines[8], "rule(\"e\", \"N N N N\") <| $() : int \{ /* a")
+    t |> equal(lines[9], " b */ return 6 \}")
+    t |> equal(lines[10], "rule(\"e\", \"f\") <| $() : int \{ return 7 \}")
+    t |> equal(lines[12], "rule(\"f\", \"N\")")
+    t |> equal(lines[13], "")
+    t |> equal(lines[14], "rule(\"f\", \"\")")
+    t |> equal(lines[15], "\}")
 }
 
 // `e` reads `$2`, so its action takes every value: `v`'s too when `v` yields one
