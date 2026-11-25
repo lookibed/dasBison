@@ -51,15 +51,16 @@ def test_number_list(t : T?) {
     t |> equal(junk.pos, 1)
 }
 
-[test(description = "a byte set spanning several classes becomes a set rule with one production per class")]
+[test(description = "a byte set spanning several classes becomes a set rule with one production per class, and a second use of the same set reuses that rule")]
 def test_set_rule(t : T?) {
     var gb : GrammarBuilder
     let s = rule_id(gb, "s")
     add_production(gb, s, [sym_bytes(range_set('a', 'c')), sym_byte('x')])
     add_production(gb, s, [sym_byte('b'), sym_byte('y')])
+    add_production(gb, s, [sym_bytes(range_set('a', 'c')), sym_byte('z')])
     let g <- build_grammar(gb, s)
     t |> equal(g.tables.err, "")
-    t |> equal(g.nclasses, 5)
+    t |> equal(g.nclasses, 6)
     t |> equal(g.byte_class['a'], g.byte_class['c'])
     let sets <- [for (n in g.tables.rule_names); n; where starts_with(n, "<set")]
     t |> equal(length(sets), 1)
@@ -68,7 +69,7 @@ def test_set_rule(t : T?) {
         set_prods += g.tables.rule_names[p.lhs] == sets[0] ? 1 : 0
     }
     t |> equal(set_prods, 2)
-    for (w in ["ax", "bx", "cx", "by"]) {
+    for (w in ["ax", "bx", "cx", "by", "az", "cz"]) {
         t |> success(lr_parse_bytes(g, w).ok, w)
     }
     for (w in ["ay", "cy", "b", "xb"]) {

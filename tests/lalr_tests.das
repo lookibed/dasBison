@@ -149,7 +149,7 @@ def test_reduce_reduce(t : T?) {
     t |> success(find(lines[0], "on <end>: reduce A ::= x | reduce B ::= x") >= 0, lines[0])
 }
 
-[test(description = "a reachable rule that derives no terminal string, or has no production, fails the build naming the rule; an unreachable one does not")]
+[test(description = "a reachable rule that derives no terminal string, or has no production, fails the build naming the rule, an unreachable one does not; an undeclared symbol, root or left-hand side fails it too")]
 def test_ill_formed(t : T?) {
     {
         var gb : LalrBuilder
@@ -186,6 +186,11 @@ def test_ill_formed(t : T?) {
         add_production(gb2, rule_id(gb2, "S"), [rule_sym(5)])
         t |> equal(build_lalr(gb2, 0).err, "production 0 of 'S' uses rule 5, which is not declared")
         t |> equal(build_lalr(gb2, 3).err, "root rule 3 is not a declared rule")
+        t |> equal(build_lalr(gb2, -1).err, "root rule -1 is not a declared rule")
+        var gb3 : LalrBuilder
+        rule_id(gb3, "S")
+        add_production(gb3, 4, [term_sym(term_id(gb3, "x"))])
+        t |> equal(build_lalr(gb3, 0).err, "production 0 has left-hand side 4, not a declared rule")
     }
 }
 
