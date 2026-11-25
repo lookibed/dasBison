@@ -82,12 +82,7 @@ def test_malformed(t : T?) {
 [test(description = "the preprocessed qsort comparator in tests/data parses from disk, found beside this test file")]
 def test_qsort_file(t : T?) {
     let path = path_join(get_this_module_dir(), "data/qsort_cmp.i")
-    var src = ""
-    fopen(path, "rb") $(f) {
-        if (f != null) {
-            src = fread(f)
-        }
-    }
+    let src = fread(path)
     t |> success(!empty(src), "{path} reads empty")
     let r = parse_c11(src, "qsort_cmp.i")
     t |> success(r.accepted, r.err)

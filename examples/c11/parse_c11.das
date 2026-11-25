@@ -15,12 +15,7 @@ def main() {
     let args <- get_command_line_arguments()
     let dashdash = find_index(args, "--")
     for (path in args[dashdash + 1..length(args)]) {
-        var src = ""
-        fopen(path, "rb") $(f) {
-            if (f != null) {
-                src = fread(f)
-            }
-        }
+        let src = fread(path)
         let res = parse_c11(src, path)
         if (res.accepted) {
             print("{path}: accepted, {c11_token_count(src)} tokens, {res.typedefs} typedefs\n")
