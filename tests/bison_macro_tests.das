@@ -8,6 +8,7 @@ require bison/lalr
 require bison/prec
 require flex/flex_macro
 require daslib/strings_boost
+require math
 require _compile_issues
 require _bison_run
 
@@ -20,7 +21,7 @@ def calc_lex(var lx : FlexLexer) : bool {
     rule("[0-9]+(\\.[0-9]+)?") {
         lx |> emit(CTok.NUM)
     }
-    rule("[\\-+*/()]") {
+    rule("[\\-+*/()^<]") {
         lx |> emit(first_character(text(lx)))
     }
     rule("[ \\t\\r\\n]+") {
@@ -67,6 +68,28 @@ def test_calc_errors(t : T?) {
     t |> equal(p.err, "1:3: unexpected end of input, expected one of: '+', '-', '*', '/', ')'")
     t |> equal(p.line, 1)
     t |> equal(p.col, 3)
+}
+
+// `<` is non-associative below `+`, `^` right-associative above it
+[bison(tokens = CTok, lexer = calc_lex)]
+def assoc(var p : Parser) : float {
+    prec_nonassoc("<")
+    prec_left("+")
+    prec_right("^")
+    rule("expr", "expr '<' expr") <| $(a, b : float) => a < b ? 1.0 : 0.0
+    rule("expr", "expr '+' expr") <| $(a, b : float) => a + b
+    rule("expr", "expr '^' expr") <| $(a, b : float) => pow(a, b)
+    rule("expr", "NUM") <| $(t : FlexToken) => to_float(text(p.lexer, t))
+}
+
+[test(description = "prec_right and prec_nonassoc reach the tables through [bison]: 2^3^2 groups to the right, a < b < c is refused at the second <")]
+def test_assoc(t : T?) {
+    t |> equal(run_parser(@@assoc, "2^3^2"), "512")
+    t |> equal(run_parser(@@assoc, "1+2^2+1"), "6")
+    t |> equal(run_parser(@@assoc, "1<2"), "1")
+    t |> equal(run_parser(@@assoc, "1+1<2^2"), "1")
+    t |> equal(run_parser(@@assoc, "1<2<3"),
+               "0 calc.txt:1:4: unexpected '<', expected one of: '+', '^', end of input")
 }
 
 enum ITok {

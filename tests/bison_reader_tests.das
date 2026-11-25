@@ -4,6 +4,7 @@ options indenting = 4
 require dastest/testing_boost public
 require daslib/strings_boost
 require strings
+require math
 require flex/flex_macro
 require bison/bison_macro
 require _compile_issues
@@ -30,7 +31,7 @@ def r_lex(var lx : FlexLexer) : bool {
     rule("x") {
         lx |> emit(RTok.X)
     }
-    rule("[\\-+*/(),]") {
+    rule("[\\-+*/(),^<]") {
         lx |> emit(first_character(text(lx)))
     }
     rule("[ \\t\\r\\n]+") {
@@ -38,26 +39,36 @@ def r_lex(var lx : FlexLexer) : bool {
 }
 
 %bison~ calc : float, tokens = RTok, lexer = r_lex
+%nonassoc '<'
 %left '+' '-'
 %left '*' '/'
+%right '^'
 %right UMINUS
 %expect 0
 %rules
-expr : expr '+' expr          { $$ = $1 + $3 }
+expr : expr '<' expr          { $$ = $1 < $3 ? 1.0 : 0.0 }
+     | expr '+' expr          { $$ = $1 + $3 }
      | expr '-' expr          { $$ = $1 - $3 }
      | expr '*' expr          { $$ = $1 * $3 }
+     | expr '^' expr          { $$ = pow($1, $3) }
      | '-' expr %prec UMINUS  { $$ = -$2 }
      | '(' expr ')'           { $$ = $2 }
      | NUM                    { $$ = to_float(text(p.lexer, $1)) }
      ;
 %%
 
-[test(description = "the %bison~ calculator evaluates by its %left and %right lines, %prec gives unary minus its level, and a refused token reports as [bison] does")]
+[test(description = "the %bison~ calculator evaluates by its precedence lines: %right groups 2^3^2 to the right, %nonassoc refuses a < b < c, %prec lifts unary minus above ^ so -2^2 is 4, and a refused token reports as [bison] does")]
 def test_calc(t : T?) {
     t |> equal(run_parser(@@calc, "1+2*3"), "7")
     t |> equal(run_parser(@@calc, "(1+2)*3"), "9")
     t |> equal(run_parser(@@calc, "2-3-4"), "-5")
     t |> equal(run_parser(@@calc, "-2*-(3+1)"), "8")
+    t |> equal(run_parser(@@calc, "2^3^2"), "512")
+    t |> equal(run_parser(@@calc, "-2^2"), "4")
+    t |> equal(run_parser(@@calc, "2*3^2"), "18")
+    t |> equal(run_parser(@@calc, "1+1<3"), "1")
+    t |> equal(run_parser(@@calc, "1<2<3"),
+               "0 calc.txt:1:4: unexpected '<', expected one of: '+', '-', '*', '^', end of input")
     t |> equal(run_parser(@@calc, "1+"),
                "0 calc.txt:1:3: unexpected end of input, expected one of: '-', '(', NUM")
     t |> equal(run_parser(@@calc, "2*(3\n+)"),
