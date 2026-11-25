@@ -7,6 +7,7 @@ module bison_reader shared public
 require daslib/ast_boost
 require daslib/strings_boost
 require strings
+require math
 
 // `%bison~ name : Type, tokens = Enum, lexer = scan` ... `%%` at module level: a yacc-like text form
 // of a grammar. The reader turns the text into the source of a `[bison]` function - one output line
@@ -494,6 +495,40 @@ def private type_line(var s : RScan; var decls : RDecls; line : string) {
     }
 }
 
+//! a declaration line without its comments: `//` to the end, `/* */` within the line; a quoted
+//! character is no comment
+def private strip_comments(line : string) : string {
+    return build_string() $(var w) {
+        peek_data(line) $(d) {
+            let n = length(d)
+            var i = 0
+            while (i < n) {
+                let c = int(d[i])
+                let next = i + 1 < n ? int(d[i + 1]) : -1
+                if (c == '\'') {
+                    let k = min(i + (next == '\\' ? 4 : 3), n)
+                    for (j in range(i, k)) {
+                        w |> write_char(int(d[j]))
+                    }
+                    i = k
+                } elif (c == '/' && next == '/') {
+                    break
+                } elif (c == '/' && next == '*') {
+                    w |> write_char(' ')
+                    i += 2
+                    while (i < n && !(int(d[i]) == '*' && i + 1 < n && int(d[i + 1]) == '/')) {
+                        i++
+                    }
+                    i = min(i + 2, n)
+                } else {
+                    w |> write_char(c)
+                    i++
+                }
+            }
+        }
+    }
+}
+
 //! one line of the declarations: `%left` / `%right` / `%nonassoc`, `%expect`, `%start`, `%type`
 def private declaration(var s : RScan; var decls : RDecls; line : string) {
     var inscope items : array<string>
@@ -624,12 +659,12 @@ def bison_reader_source(text : string) : BisonReaderOutput {
     header(s, decls)
     var sep_found = false
     while (empty(s.err) && next_line(s)) {
-        let line = trim(rest_of_line(s))
+        let line = trim(strip_comments(rest_of_line(s)))
         if (line == "%rules") {
             sep_found = true
             break
         }
-        if (!empty(line) && !starts_with(line, "//")) {
+        if (!empty(line)) {
             declaration(s, decls, line)
         }
     }

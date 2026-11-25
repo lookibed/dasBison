@@ -147,6 +147,20 @@ def test_line_preserving_source(t : T?) {
     t |> equal(lines[8], "\}")
 }
 
+[test(description = "a comment on a declaration line is no part of it: // to the end and /* */ within the line, a quoted / kept")]
+def test_declaration_comments(t : T?) {
+    let text = (" e : int, tokens = T, lexer = lx\n%left '+' '-' // additive\n"
+        + "%left '/' /* division */ '*'  // multiplicative\n%expect 0 // none\n%start e // root\n"
+        + "%rules\ne : e '+' e \{ $$ = 1 \} ;\n")
+    let out = bison_reader_source(text)
+    t |> equal(out.err, "")
+    let lines <- split(out.source, "\n")
+    t |> equal(lines[0],
+               "[bison(tokens = T, lexer = lx, expected = 0)] def e(var p : Parser) : int \{")
+    t |> equal(lines[1], "prec_left(\"'+'\", \"'-'\")")
+    t |> equal(lines[2], "prec_left(\"'/'\", \"'*'\")")
+}
+
 [test(description = "a block comment in an action is copied as written: a brace in it does not close the action, a $n in it is not read, nested comments balance and its lines are kept")]
 def test_action_comments(t : T?) {
     let text = (" e : int, tokens = T, lexer = lx\n%rules\ne : N \{ /* } */ $$ = 1 \}\n"
