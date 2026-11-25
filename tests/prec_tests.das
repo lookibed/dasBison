@@ -295,15 +295,16 @@ def test_dangling_else_declared(t : T?) {
     t |> equal(ifs, [6, 4])
 }
 
-[test(description = "a reduce/reduce cell ignores precedence and keeps the production that comes first in the grammar, reported as default")]
+[test(description = "a reduce/reduce cell on a lookahead with precedence ignores the precedence of the lookahead and of both productions and keeps the production that comes first in the grammar, reported as default")]
 def test_reduce_reduce(t : T?) {
     for (order in [["A", "B"], ["B", "A"]]) {
         var gb : LalrBuilder
-        prod(gb, "S", "A")
-        prod(gb, "S", "B")
+        prod(gb, "S", "A y")
+        prod(gb, "S", "B y")
         let first = prod(gb, order[0], "x")
         let second = prod(gb, order[1], "x")
         prec_left(gb, terms(gb, ["lo"]))
+        prec_left(gb, terms(gb, ["y"]))
         prec_left(gb, terms(gb, ["hi"]))
         prec_of_production(gb, first, term_id(gb, "lo"))
         prec_of_production(gb, second, term_id(gb, "hi"))
@@ -311,6 +312,7 @@ def test_reduce_reduce(t : T?) {
         t |> equal(tb.conflicts, 1)
         let res <- resolve_precedence(tb, gb)
         t |> equal(res.report.by_default, 1)
+        t |> equal(res.report.by_precedence, 0)
         t |> equal(res.report.reduce_reduce, 1)
         t |> equal(res.report.shift_reduce, 0)
         t |> equal(res.tables.conflicts, 1)
@@ -319,11 +321,68 @@ def test_reduce_reduce(t : T?) {
         t |> equal(describe_action(tb, res.report.cells[0].chosen), "reduce {order[0]} ::= x")
         let text = format_report(res.report)
         t |> success(find(text, "conflicts: 1 reduce/reduce\n") >= 0, text)
-        t |> success(find(text, "    <end>  [reduce using rule 4 ({order[1]} ::= x)]\n") >= 0, text)
-        let r <- lr_parse(res.tables, tokens(gb, "x"))
+        t |> success(find(text, "    y  [reduce using rule 4 ({order[1]} ::= x)]\n") >= 0, text)
+        let r <- lr_parse(res.tables, tokens(gb, "x y"))
         t |> success(r.ok)
         t |> equal(describe_prod(tb, r.reductions[0]), "{order[0]} ::= x")
     }
+}
+
+[test(description = "a shift/reduce cell whose lookahead has no precedence stays a default conflict though its production has one")]
+def test_lookahead_without_precedence(t : T?) {
+    var gb : LalrBuilder
+    let add = prod(gb, "E", "E + E")
+    prod(gb, "E", "num")
+    prec_left(gb, terms(gb, ["P"]))
+    prec_of_production(gb, add, term_id(gb, "P"))
+    let res <- resolve_precedence(build_lalr(gb, rule_id(gb, "E")), gb)
+    t |> equal(res.report.by_default, 1)
+    t |> equal(res.report.by_precedence, 0)
+    t |> equal(res.report.shift_reduce, 1)
+}
+
+[test(description = "prec_of_production on a production past the ones seen fills the gap with -1, no terminal, so the productions before it keep their last terminal's precedence")]
+def test_prec_of_production_fill(t : T?) {
+    var gb : LalrBuilder
+    let t0 = term_id(gb, "t0")
+    prec_of_production(gb, 2, t0)
+    t |> equal(gb.prec_prods, [-1, -1, t0])
+}
+
+[test(description = "an accept and a reduce in one cell - a root that derives itself - is a reduce/reduce conflict the default settles on the accept, production 0, which has no precedence even when other productions do")]
+def test_accept_in_conflict(t : T?) {
+    var gb : LalrBuilder
+    prod(gb, "S", "T")
+    prod(gb, "S", "x")
+    let back = prod(gb, "T", "S")
+    prec_left(gb, terms(gb, ["x"]))
+    prec_of_production(gb, back, term_id(gb, "x"))
+    let tb <- build_lalr(gb, rule_id(gb, "S"))
+    t |> equal(tb.conflicts, 1)
+    let res <- resolve_precedence(tb, gb)
+    t |> equal(res.report.by_default, 1)
+    t |> equal(res.report.reduce_reduce, 1)
+    let c & = unsafe(res.report.cells[0])
+    t |> equal(c.chosen, LALR_ACCEPT)
+    t |> equal(describe_action(tb, c.kept[0]), "reduce T ::= S")
+    t |> equal(format_report(res.report),
+               "State 1 conflicts: 1 reduce/reduce\n    <end>  accept\n    <end>  [reduce using rule 3 (T ::= S)]\n")
+    t |> success(lr_parse(res.tables, tokens(gb, "x")).ok)
+}
+
+[test(description = "a state's header counts only its default cells: a precedence-resolved shift beside a default one is not counted, two default cells sum")]
+def test_report_header_counts(t : T?) {
+    var gb <- arith(["+", "*"])
+    prec_right(gb, terms(gb, ["*"]))
+    let res <- resolve_precedence(build_lalr(gb, rule_id(gb, "E")), gb)
+    t |> equal(res.report.by_precedence, 1)
+    t |> equal(res.report.by_default, 3)
+    let text = ("State 7 conflicts: 2 shift/reduce\n"
+        + "    +  shift, and go to state 4\n    +  [reduce using rule 1 (E ::= E + E)]\n"
+        + "    *  shift, and go to state 5\n    *  [reduce using rule 1 (E ::= E + E)]\n"
+        + "State 8 conflicts: 1 shift/reduce\n"
+        + "    +  shift, and go to state 4\n    +  [reduce using rule 2 (E ::= E * E)]\n")
+    t |> equal(format_report(res.report), text)
 }
 
 [test(description = "a cell with a shift and two reduces is one shift/reduce and one reduce/reduce conflict in the report, the shift chosen")]
