@@ -289,3 +289,34 @@ def test_nullable_first(t : T?) {
         t |> success(lr_parse(tb, tokens(gb, "a c")).ok, "FIRST(D) passes the nullable B")
     }
 }
+
+[test(description = "an action two closure items add to one cell is one action: S ::= x E y | x E y w with E ::= ε has no conflict, and a cell of three reductions each added twice keeps two in alt, and the first conflict names the first cell's first other action")]
+def test_duplicate_actions(t : T?) {
+    {
+        var gb : LalrBuilder
+        prod(gb, "S", "x E y")
+        prod(gb, "S", "x E y w")
+        prod(gb, "E", "")
+        let tb <- build_lalr(gb, rule_id(gb, "S"))
+        t |> equal(tb.conflicts, 0)
+        t |> equal(length(tb.alt), 0)
+        t |> success(lr_parse(tb, tokens(gb, "x y w")).ok)
+    }
+    var gb : LalrBuilder
+    for (r in ["E", "F", "G"]) {
+        prod(gb, "S", "x {r} y")
+        prod(gb, "S", "x {r} y w")
+        prod(gb, r, "")
+    }
+    prod(gb, "S", "z H q")
+    prod(gb, "S", "z K q")
+    prod(gb, "H", "")
+    prod(gb, "K", "")
+    let tb <- build_lalr(gb, rule_id(gb, "S"))
+    t |> equal(tb.conflicts, 2)
+    let lines <- describe_conflicts(tb)
+    t |> equal(length(lines), 2)
+    t |> success(ends_with(lines[0], " on y: reduce E ::= | reduce F ::= | reduce G ::="), lines[0])
+    t |> success(ends_with(lines[1], " on q: reduce H ::= | reduce K ::="), lines[1])
+    t |> success(ends_with(tb.first_conflict, " on y: reduce F ::="), tb.first_conflict)
+}
