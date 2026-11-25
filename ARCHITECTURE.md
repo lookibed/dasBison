@@ -10,7 +10,10 @@ front end on top of them, and a deterministic driver. It depends on `daslib/` an
 - `bison/lalr.das` - the core: `LalrBuilder` (`term_id`, `declare_terms`, `rule_id`,
   `add_production`, `term_sym`, `rule_sym`), `build_lalr` and its result `LalrTables`, the
   conflict report (`describe_conflicts`, `describe_prod`, `describe_action`), and the driver
-  (`lr_parse`, `LrParse`). Knows nothing of bytes or text.
+  (`lr_parse`, `LrParse`). Knows nothing of bytes or text. `LalrBuilder.prec_terms` and
+  `prec_prods` hold the precedence declarations; only `bison/prec.das` writes or reads them.
+- `bison/prec.das` - the precedence layer: `prec_left`, `prec_right`, `prec_nonassoc`,
+  `prec_of_production`.
 - `bison/bytes.das` - the byte adapter: `GrammarBuilder` over byte sets (`sym_byte`, `sym_bytes`,
   `sym_rule`), the byte partition, `build_grammar` and its result `Grammar` (`byte_class`,
   `nclasses`, the core's `tables`), and `byte_terms` / `lr_parse_bytes`.

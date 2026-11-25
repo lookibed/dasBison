@@ -24,6 +24,8 @@ struct LalrBuilder {
     rule_names : array<string>
     rule_index : table<string; int>
     prods : array<Production>
+    prec_terms : array<int2>    //!< per terminal: (level, associativity), written by `bison/prec`
+    prec_prods : array<int>     //!< per production: the terminal whose precedence it takes, or -1
 }
 
 //! The finished tables. `action[state * nterms + term]`: 0 = error, `1 + s` = shift to state s,
