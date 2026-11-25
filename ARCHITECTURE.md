@@ -12,8 +12,9 @@ front end on top of them, and a deterministic driver. It depends on `daslib/` an
   conflict report (`describe_conflicts`, `describe_prod`, `describe_action`), and the driver
   (`lr_parse`, `LrParse`). Knows nothing of bytes or text. `LalrBuilder.prec_terms` and
   `prec_prods` hold the precedence declarations; only `bison/prec.das` writes or reads them.
-- `bison/prec.das` - the precedence layer: `prec_left`, `prec_right`, `prec_nonassoc`,
-  `prec_of_production`.
+- `bison/prec.das` - the precedence layer: the declarations (`prec_left`, `prec_right`,
+  `prec_nonassoc`, `prec_of_production`), `resolve_precedence` and its `PrecResult` /
+  `PrecReport` / `PrecCell`, and `format_report`. Reads the core's tables, never builds them.
 - `bison/bytes.das` - the byte adapter: `GrammarBuilder` over byte sets (`sym_byte`, `sym_bytes`,
   `sym_rule`), the byte partition, `build_grammar` and its result `Grammar` (`byte_class`,
   `nclasses`, the core's `tables`), and `byte_terms` / `lr_parse_bytes`.
@@ -69,8 +70,8 @@ A cell more than one action claims is not an error and is not resolved. Shifts a
 first, so the cell's first action - a shift when there is one - stays in `action` and every other
 action goes to `alt[cell]`, without duplicates. `conflicts` counts the cells, `first_conflict`
 names the first, `describe_conflicts` lists each with all its actions. Precedence and
-associativity are not part of the core: a later resolution layer can choose among a cell's
-actions only because none was dropped.
+associativity are not part of the core: the precedence layer chooses among a cell's actions
+only because none was dropped (`#precedence`).
 
 ## Well-formed grammars {#well-formed}
 
@@ -87,3 +88,36 @@ it reports the token position, the state and the refused terminal, and the expec
 every terminal that some reduce chain from the current stack ends in a shift or accept for, so
 the list is exact and not just the nonzero cells of the top state. `LR_MAX_REDUCES` bounds the
 reductions between two shifts, so a cyclic grammar's primary actions cannot loop.
+
+## The precedence layer {#precedence}
+
+`bison/prec.das` resolves conflicts after `build_lalr`, the way yacc does, from declarations kept
+in the builder. Each `prec_left` / `prec_right` / `prec_nonassoc` call gives its terminals the next
+level, so a later call binds tighter. A production takes the precedence of its last terminal, or
+of the terminal `prec_of_production` names (`%prec`); a production whose last terminal has no level
+has none. `resolve_precedence(t, gb)` walks the conflicting cells in index order; in each, every
+reduce (by ascending production) is held against the cell's shift while a shift remains:
+
+| shift on `a`, reduce by `p` | result |
+|---|---|
+| `prec(p) > prec(a)` | reduce; the shift goes |
+| `prec(p) < prec(a)` | shift; the reduce goes |
+| equal, `a` is `%left` | reduce |
+| equal, `a` is `%right` | shift |
+| equal, `a` is `%nonassoc` | error: the cell gets action 0, every action goes |
+| `a` or `p` has no level | kept for the default |
+| no shift (reduce/reduce) | kept for the default; precedence is never used |
+
+A cell left with one action is resolved by precedence. A cell left with more is unresolved: yacc's
+default picks the shift, or else the production that comes first in the grammar, and the cell
+still counts as a conflict - its losers stay in `alt`, `conflicts` counts it, and the report lists
+it in `bison -v`'s words (`State N conflicts: K shift/reduce, M reduce/reduce`, then each action,
+the losers in brackets). The counts are bison's: one shift/reduce for a cell with a shift and a
+reduce, one reduce/reduce for each reduce past the first. Every action that leaves a cell is in
+that cell's `PrecCell.removed`.
+
+The result is a copy: the input tables keep every action, so the same build serves another set of
+declarations, `describe_conflicts` still shows what the grammar itself leaves open, and
+resolution is a function of (tables, declarations) rather than a mutation whose history is lost.
+The copy is an ordinary `LalrTables`: `lr_parse` reads it unchanged, and an error cell refuses its
+terminal with the expected set the reduce chains compute (`#driver`).

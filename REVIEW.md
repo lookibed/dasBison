@@ -33,6 +33,15 @@ defect** - every column layout, the byte adapter's included, assumes it
 **A diff that makes `lr_parse` take an action from `alt`, or report `expected` other than through
 the reduce chains from the stack, is a defect** (`ARCHITECTURE.md#driver`).
 
+**A diff that makes `build_lalr` or anything it calls choose between the actions of a cell by
+precedence, associativity or a default is a defect** - resolution is the precedence layer's, over
+a copy of the tables (`ARCHITECTURE.md#precedence`).
+
+**A diff that lets `resolve_precedence` take an action out of a cell without recording it in that
+cell's `PrecCell` (`removed`, or `kept` for a default's loser), or resolve a cell by default
+without counting it in `PrecReport.by_default`, is a defect** - the report is the only record
+of what precedence and the default decided (`ARCHITECTURE.md#precedence`).
+
 **A diff that changes the expected counts of `tests/c11_tests.das` (479 states, 98 classes, 2
 conflicts on both paths) names the reason in its description** - they are dasLR1's own counts for
 the same grammar.
