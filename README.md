@@ -67,6 +67,36 @@ def main() {
   (`file:line:col: unexpected TOKEN, expected one of: a, b, c`) and the function returns the default
   value. Walk-through: `tutorials/01_calculator.das`.
 
+The calculator as yacc-like text, with a unary minus - `%bison~` at module level writes a `[bison]`
+function like the one above:
+
+```das
+%bison~ calc : float, tokens = CTok, lexer = calc_lex
+%left '+' '-'
+%left '*' '/'
+%right UMINUS
+%expect 0
+%rules
+expr : expr '+' expr          { $$ = $1 + $3 }
+     | expr '-' expr          { $$ = $1 - $3 }
+     | expr '*' expr          { $$ = $1 * $3 }
+     | expr '/' expr          { $$ = $1 / $3 }
+     | '-' expr %prec UMINUS  { $$ = -$2 }
+     | '(' expr ')'           { $$ = $2 }
+     | NUM                    { $$ = to_float(text(p.lexer, $1)) }
+     ;
+%%
+```
+
+- The header names the parser, its result type, the token enum and the lexer. Before `%rules`:
+  `%left` / `%right` / `%nonassoc`, `%expect N`, `%start NAME` (else the first rule is the root),
+  `%type <Type> names`. The text ends at `%%`.
+- `$n` is the n-th symbol of the right-hand side, quoted characters counted; reading one that
+  carries no value is a compile error. `$$ = value` returns the rule's value. The root's type is the
+  header's; another rule an action reads by `$n` needs `%type`.
+- The reader's errors, `[bison]`'s errors at a rule and daslang's inside an action point at the line
+  of the text. Walk-through: `tutorials/02_bison_reader.das`.
+
 The core runs without the macro:
 
 ```das

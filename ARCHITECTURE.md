@@ -3,7 +3,8 @@
 This document follows `ARCHITECTURE_COMMON.md` (a copy sits at this package's root). dasBison is a
 pure daslang parser generator: LALR(1) tables over integer terminals, a byte-class front end on top
 of them, a deterministic driver, and the `[bison]` macro, which builds the tables at compile time
-and generates a typed parser over a dasFlex lexer. The core (`lalr`, `prec`, `bytes`,
+and generates a typed parser over a dasFlex lexer, and the `%bison~` reader, its yacc-like text form.
+The core (`lalr`, `prec`, `bytes`,
 `grammar_text`) depends on `daslib/` alone; `bison_parser` and `bison_macro` also depend on
 dasFlex's runtime module `flex/flex`, the only package dasBison requires.
 
@@ -29,7 +30,11 @@ dasFlex's runtime module `flex/flex`, the only package dasBison requires.
 - `bison/bison_macro.das` - the `[bison]` function annotation: reads the body's calls, builds and
   resolves the tables, and emits the globals, the action functions and the driver. Holds no
   runtime code the generated parser calls.
-- `tutorials/` - one runnable page per topic; `01_calculator.das` is the macro's walk-through.
+- `bison/bison_reader.das` - the `%bison~` reader: `bison_reader_source` (the text into the source
+  of a `[bison]` function, `BisonReaderOutput`) and the `BisonReader` reader macro. Builds no
+  tables and no AST; `bison_macro` requires it publicly, so `require bison/bison_macro` brings it.
+- `tutorials/` - one runnable page per topic; `01_calculator.das` is the macro's walk-through,
+  `02_bison_reader.das` the same calculator as `%bison~` text.
 - `tests/` - the package's tests; `tests/_grammar_c11.das` is the C11 grammar fixture (the
   owner's probe grammar, its productions folded into `add_production` literals), which dastest
   skips as a test because of its leading `_`.
@@ -230,3 +235,41 @@ chain from the current state stack ends in a shift or accept for, computed by `b
 from the emitted tables, so it is exact and in terminal order. A lexer error is the parser's
 error as the lexer worded it. A grammar error - an unknown name, a bad right-hand side, an action
 whose arguments do not match its values - fails the compile at the rule's line.
+
+## Two front ends, one back end {#reader}
+
+`[bison]` reads a grammar from `rule`, `prec_*` and `root` calls; `%bison~ name : Type, tokens = Enum,
+lexer = scan ... %%` reads it from yacc-like text. The reader builds neither tables nor AST: its
+`suffix` returns daslang source the parser reads in place of the text - `[bison(tokens = Enum,
+lexer = scan, expected = N)] def name(var p : Parser) : Type` whose body holds a `prec_left` /
+`prec_right` / `prec_nonassoc` call per precedence line, `root` for `%start`, and a
+`rule("lhs", "rhs")` per alternative with its action as the block. The grammar therefore goes
+through the one back end - `grammar_from_text`, `build_lalr`, `resolve_precedence`, the emitted
+driver - and both forms of a grammar give the same tables, values and errors.
+
+The declarations are `%left` / `%right` / `%nonassoc` (names as written, quoted characters
+included), `%expect N` (the annotation's `expected`), `%start NAME` (the root; without it the first
+rule, as in yacc) and `%type <Type> names`. The line `%rules` separates them from the rules rather
+than yacc's inner `%%`: the text ends at the first `%%`, as every reader's does, so the formatter
+and the other tools that skip reader text skip all of it. A rule is `name : alternative | ... ;`;
+an alternative is names, quoted characters, an optional `%prec NAME` and an optional action in
+braces, last; `%empty` or nothing is the epsilon alternative; `//` and `/* */` comment the rules.
+
+An action is daslang code with `$$` and `$n` rewritten. `$n` is the n-th symbol of the
+alternative's right-hand side, valueless terminals counted. An action that reads no `$n` takes no
+argument; one that reads any takes every value of the right-hand side, as `[bison]` requires, as
+`_n : T` for each symbol `n` that carries a value - a named token as its `FlexToken`, a rule that
+yields as its type - and `$n` becomes `_n`. A rule yields when the text types it or one of its
+actions writes `$$` or returns a value. The types come from the text: the root's is the header's,
+another rule's its `%type`; an action of a typed rule declares that result type, and an untyped
+rule's type is inferred by `[bison]` from its first action (`#values`). `$$ = value` becomes
+`return value`, so it ends the action; a value that has to move is returned with `return <- $n`.
+`$n` on a quoted character or a rule that yields nothing, past the right-hand side, or on a rule
+whose type the text does not declare is the reader's error.
+
+The source keeps one output line per input line. An alternative's call goes on the line its action
+starts on (its last symbol's when it has none), a multi-line action keeps its lines, calls that
+share a line are separated by `;`, and the closing `}` takes the `%%` line. The parser is told the
+source starts at the reader's line in the user's file, so `[bison]`'s errors at a rule, daslang's
+errors inside an action and the reader's own errors - placed at the reader's line plus the line in
+the text - all land on the line the user wrote.

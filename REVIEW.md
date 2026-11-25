@@ -70,3 +70,13 @@ defined, and two pops from one stack would swap (`ARCHITECTURE.md#macro-driver`)
 **A diff that makes a `[bison]` parse error report a position, a token name or an expected set
 other than the refused token's, the grammar's names, and the reduce chains' set, or return without
 setting `failed`, is a defect** (`ARCHITECTURE.md#macro-errors`).
+
+**A diff that gives a front end - the `%bison~` reader or a new one - its own table builder,
+precedence resolution or driver, rather than handing its grammar to `[bison]`'s back end, is a
+defect** - both forms of a grammar must give the same tables, values and errors
+(`ARCHITECTURE.md#reader`).
+
+**A diff that makes `bison_reader_source` put a line of its output anywhere but on the line of the
+text it came from, or makes the reader's text end anywhere but at the first `%%`, is a defect** -
+the output holds the text's lines, the closing `}` on the `%%` line, and diagnostics land on the
+wrong line otherwise (`ARCHITECTURE.md#reader`).
