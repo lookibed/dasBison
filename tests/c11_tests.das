@@ -3,6 +3,7 @@ options indenting = 4
 
 require dastest/testing_boost public
 require bison/bytes
+require bison/prec
 require daslib/strings_boost
 require _grammar_c11
 
@@ -54,9 +55,12 @@ def test_c11_bytes(t : T?) {
                  "_Atomic (")
     let if_reduce = "reduce selection_statement ::= byte 184 '(' expression ')' statement"
     t |> success(has_line(lines, "on byte 185: shift", if_reduce), "dangling else")
+    let res <- resolve_precedence(g.tables, LalrBuilder())
+    t |> equal(res.report.by_default, 2)
+    t |> equal(res.report.by_precedence, 0)
 }
 
-[test(description = "the C11 grammar with one integer terminal per token builds to the same 479 states and the same two conflicts", timeout = 1200)]
+[test(description = "the C11 grammar with one integer terminal per token builds to the same 479 states and the same two conflicts, which resolve_precedence reports as two default shifts and the driver still parses through", timeout = 1200)]
 def test_c11_int(t : T?) {
     var gb : GrammarBuilder
     let root = build_c11(gb)
@@ -70,4 +74,28 @@ def test_c11_int(t : T?) {
     t |> success(has_line(lines, "on '(': shift", "reduce type_qualifier ::= ATOMIC"), "_Atomic (")
     let if_reduce = "reduce selection_statement ::= IF '(' expression ')' statement"
     t |> success(has_line(lines, "on ELSE: shift", if_reduce), "dangling else")
+    let res <- resolve_precedence(tb, lb)
+    t |> equal(res.report.by_default, 2)
+    t |> equal(res.report.by_precedence, 0)
+    t |> equal(res.report.nonassoc_errors, 0)
+    t |> equal(res.report.shift_reduce, 2)
+    t |> equal(res.report.reduce_reduce, 0)
+    t |> equal(res.tables.conflicts, 2)
+    t |> equal(tb.conflicts, 2)
+    let text = ("State 38 conflicts: 1 shift/reduce\n" +
+        "    '('  shift, and go to state 62\n" +
+        "    '('  [reduce using rule 161 (type_qualifier ::= ATOMIC)]\n" +
+        "State 443 conflicts: 1 shift/reduce\n" +
+        "    ELSE  shift, and go to state 463\n" +
+        "    ELSE  [reduce using rule 254 (selection_statement ::= IF '(' expression ')' statement)]\n")
+    t |> equal(format_report(res.report), text)
+    let words = "INT IDENTIFIER '(' ')' '\{' IF '(' IDENTIFIER ')' IF '(' IDENTIFIER ')' ';' ELSE ';' '\}'"
+    let toks <- [for (w in split(words, " ")); lb.term_index?[w] ?? -1]
+    let r <- lr_parse(res.tables, toks)
+    t |> success(r.ok, r.err)
+    let ifs <- [for (p in r.reductions); describe_prod(res.tables, p);
+                where starts_with(describe_prod(res.tables, p), "selection_statement ::= IF")]
+    t |> equal(ifs, ["selection_statement ::= IF '(' expression ')' statement ELSE statement",
+                     "selection_statement ::= IF '(' expression ')' statement"])
+    t |> success(!lr_parse(res.tables, [for (w in split("INT ';' ELSE", " ")); lb.term_index?[w] ?? -1]).ok)
 }
