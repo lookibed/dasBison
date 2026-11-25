@@ -504,10 +504,7 @@ def private make_driver(spec : BisonSpec; g : TextGrammar; t : LalrTables; vals 
             bison`reduces++
             let bison`prod = -1 - bison`act
             let bison`depth = length(bison`states) - $i(g_len)[bison`prod]
-            while (bison`low > bison`depth) {
-                bison`low--
-                bison`saved |> push(bison`states[bison`low])
-            }
+            bison_keep_popped(bison`states, bison`low, bison`saved, bison`depth)
             $b(arms)
         }
     }
@@ -665,14 +662,13 @@ def private add_tables(spec : BisonSpec; g : TextGrammar; t : LalrTables; at : L
     }
     var names := t.term_names
     names[t.eof] = "end of input"
-    let lhs <- [for (pr in t.prods); pr.lhs]
-    let len <- [for (pr in t.prods); length(pr.rhs)]
+    let cols <- prod_columns(t)
     return (table_global("{f}`bison`action", t.action, at, errors)
         && table_global("{f}`bison`goto", t.goto_nt, at, errors)
         && table_global("{f}`bison`kind_terms", kind_terms, at, errors)
         && table_global("{f}`bison`names", names, at, errors)
-        && table_global("{f}`bison`lhs", lhs, at, errors)
-        && table_global("{f}`bison`len", len, at, errors))
+        && table_global("{f}`bison`lhs", cols.lhs, at, errors)
+        && table_global("{f}`bison`len", cols.len, at, errors))
 }
 
 [function_macro(name="bison")]

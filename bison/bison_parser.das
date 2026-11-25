@@ -56,6 +56,12 @@ def bison_expected(action, goto_nt, lhs, len : array<int>; nterms, nrules : int;
     return <- lr_expected(action, goto_nt, lhs, len, nterms, nrules, at_read)
 }
 
+//! Before a reduce cuts the state stack to `depth`: the states the token was read on that the cut
+//! removes go to `saved` (`lr_keep_popped`).
+def bison_keep_popped(states : array<int>; var low : int&; var saved : array<int>; depth : int) {
+    lr_keep_popped(states, low, saved, depth)
+}
+
 //! The lexer refused a byte: its error is the parser's.
 def bison_lexer_failed(var p : Parser) {
     p.failed = true

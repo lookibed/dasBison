@@ -25,12 +25,13 @@ dasFlex's runtime module `flex/flex`, the only package dasBison requires.
   `nclasses`, the core's `tables`), and `byte_terms` / `lr_parse_bytes`.
 - `bison/grammar_text.das` - grammars as yacc-like text: `parse_rhs` (`TextRhs`, `TextSymbol`),
   `grammar_from_text` from `TextRule`s and `TextPrec`s into a `TextGrammar` (the core's builder,
-  the token kind of every terminal), and `conflict_warning`; and the lexing both text front ends
-  share - `quoted_char`, `is_name_start`, `is_name_char` - so a quoted character or a name reads
-  the same in a right-hand side and in `%bison~` text. Emits no code.
+  the token kind of every terminal), `conflict_warning`, and the lexing both text front ends share
+  (`quoted_char`, `is_name_start`, `is_name_char`), so a quoted character or a name reads the same
+  in a right-hand side and in `%bison~` text. Emits no code.
 - `bison/bison_parser.das` - what a generated parser runs on: `Parser`, `parser_open`,
   `text(lx, token)`, and the helpers the driver calls (`bison_pop`, `bison_terminal`,
-  `bison_expected`, `bison_syntax_error`, `bison_lexer_failed`). Builds no tables.
+  `bison_keep_popped`, `bison_expected`, `bison_syntax_error`, `bison_lexer_failed`). Builds no
+  tables.
 - `bison/bison_macro.das` - the `[bison]` function annotation: reads the body's calls, builds and
   resolves the tables, and emits the globals, the action functions and the driver. Holds no
   runtime code the generated parser calls.
@@ -41,8 +42,8 @@ dasFlex's runtime module `flex/flex`, the only package dasBison requires.
   `02_bison_reader.das` the same calculator as `%bison~` text.
 - `tests/` - the package's tests; `tests/_grammar_c11.das` is the C11 grammar fixture (the
   owner's probe grammar, its productions folded into `add_production` literals), which dastest
-  skips as a test because of its leading `_`, as it skips the other shared helpers there
-  (`_compile_issues`, `_bison_run`, `_lalr_fixtures`).
+  skips as a test for its leading `_`, as it skips the other shared helpers (`_compile_issues`,
+  `_bison_run`, `_lalr_fixtures`).
 
 ## Integer terminals {#int-terminals}
 
@@ -104,16 +105,17 @@ first such rule; `err_rule` holds its name, so a front end places the error at t
 
 ## The driver {#driver}
 
-`lr_parse` runs one stack and takes the primary action of a cell (`action`, never `alt`), which
-is the shift in a shift/reduce cell - the dangling `else` binds to the inner `if`. On a refusal
-it reports the token position, the state and the refused terminal, and the expected terminals:
-every terminal that some reduce chain ends in a shift or accept for, from the stack the refused
-token was read on. An LALR state merged from several contexts reduces on a token none of them
-takes, so the stack at the refusal has lost terminals that were valid when the token was read;
-before each reduce, `lr_keep_popped` keeps the read-time states the reduce removes, and
-`lr_stack_at_read` rebuilds that stack. The list is exact and not just the nonzero cells of a
-state. `LR_MAX_REDUCES` bounds the
-reductions between two shifts, so a cyclic grammar's primary actions cannot loop.
+`lr_parse` runs one stack and takes the primary action of a cell (`action`, never `alt`), which is
+the shift in a shift/reduce cell - the dangling `else` binds to the inner `if`. On a refusal it
+reports the token position, the state and the refused terminal, and the expected terminals: every
+terminal that some reduce chain ends in a shift or accept for, from the stack the refused token was
+read on. An LALR state merged from several contexts reduces on a token none of them takes, so the
+stack at the refusal has lost terminals that were valid when the token was read; before each reduce,
+`lr_keep_popped` keeps the read-time states the reduce removes, and `lr_stack_at_read` rebuilds that
+stack. A `[bison]` driver calls the same two, through `bison_keep_popped` and `bison_expected`,
+since the user's module sees only `bison/bison_parser`. The list is exact and not just the nonzero
+cells of a state. `LR_MAX_REDUCES` bounds the reductions between two shifts, so a cyclic grammar's
+primary actions cannot loop.
 
 ## The precedence layer {#precedence}
 
@@ -205,21 +207,20 @@ by themselves - another action of the rule, or a pass-through, against the stack
 
 ## Compile-time tables {#compile-time-tables}
 
-The annotation's `apply` builds the tables through `build_lalr` and `resolve_precedence` and
-stores the resolved copy as private globals of the user's module - `action`, `goto`, the kind
-map, the terminal names, and the left-hand side and length of every production - each a
-`to_array_move` of a fixed array literal, the pattern dasFlex's tables use. The running program
-builds nothing; the macro module requires the core, the user's module only `bison/bison_parser`
-through it.
+The annotation's `apply` builds the tables through `build_lalr` and `resolve_precedence` and stores
+the resolved copy as private globals of the user's module - `action`, `goto`, the kind map, the
+terminal names, and the left-hand side and length of every production (`prod_columns`, the columns
+`lr_parse` hands `lr_expected` too) - each a `to_array_move` of a fixed array literal, the pattern
+dasFlex's tables use. The running program builds nothing; the macro module requires the core, the
+user's module only `bison/bison_parser` through it.
 
 A conflict precedence leaves to yacc's default is reported as a compile warning
 (`to_log(LOG_WARNING, ...)`): `conflict_warning` names the counts and the cells in `format_report`'s
 `bison -v` words. `[bison(expected = N)]` is yacc's `%expect N`: it silences the warning when the
-grammar has exactly `N` shift/reduce conflicts and no reduce/reduce one, and a different count
-warns with the expectation named. A reduce/reduce conflict always warns. `expected` is an int of 0
-or more; any other value fails the compile, as `%expect` with no count does. The argument is
-`expected` because `expect` is a reserved word in daslang and annotation argument names accept
-only a few keywords.
+grammar has exactly `N` shift/reduce conflicts and no reduce/reduce one, and a different count warns
+with the expectation named. A reduce/reduce conflict always warns. An `expected` that is not an int
+of 0 or more fails the compile. The argument is `expected` because `expect` is a reserved word in
+daslang and annotation argument names accept only a few keywords.
 
 ## The generated driver {#macro-driver}
 

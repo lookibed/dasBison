@@ -611,6 +611,11 @@ def private lr_takes(action, goto_nt, lhs, len : array<int>; nterms, nrules : in
     return false
 }
 
+//! The left-hand side and the length of every production of `t`: the per-production columns
+//! `lr_expected` and a `[bison]` parser's driver read.
+def prod_columns(t : LalrTables) : tuple<lhs : array<int>; len : array<int>> =>
+    <- (lhs <- [for (pr in t.prods); pr.lhs], len <- [for (pr in t.prods); length(pr.rhs)])
+
 //! The terminals some reduce chain from `stack` ends in a shift or accept for, ascending: the
 //! tables as flat arrays (`action`, `goto_nt`, the left-hand side and length of every production,
 //! `nterms`, `nrules`), so `lr_parse` and a `[bison]` parser's emitted globals share one walk.
@@ -684,10 +689,10 @@ def lr_parse(t : LalrTables; tokens : array<int>) : LrParse {
             res.pos = pos
             res.state = top
             res.token = term
-            var inscope lhs <- [for (pr in t.prods); pr.lhs]
-            var inscope len <- [for (pr in t.prods); length(pr.rhs)]
+            var inscope cols <- prod_columns(t)
             var inscope at_read <- lr_stack_at_read(stack, low, saved)
-            res.expected <- lr_expected(t.action, t.goto_nt, lhs, len, t.nterms, t.nrules, at_read)
+            res.expected <- lr_expected(t.action, t.goto_nt, cols.lhs, cols.len, t.nterms, t.nrules,
+                                        at_read)
             let why = a < 0 ? "reduce loop" : "unexpected terminal {term}"
             res.err = "{why} in state {top}"
             return <- res
