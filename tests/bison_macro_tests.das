@@ -74,8 +74,8 @@ def test_calc_errors(t : T?) {
 
 enum ITok {
     IF = 1
-    ELSE = 2
-    X = 3
+    ELSE
+    X
 }
 
 [flex]
@@ -158,6 +158,10 @@ def test_text_grammar(t : T?) {
     let same_kind <- grammar_from_text([TextRule(lhs = "e", rhs = "NUM"), TextRule(lhs = "e", rhs = "e PLUS '+'")], precs, "", tokens)
     t |> equal(same_kind.err, "'+' and PLUS are the same token kind 43")
     t |> equal(same_kind.err_rule, 1)
+    let prec_kind <- grammar_from_text([TextRule(lhs = "e", rhs = "NUM")], [TextPrec(assoc = PrecAssoc.left, names <- ["NUM", "PLUS", "+"])], "", tokens)
+    t |> equal(prec_kind.err, "'+' and PLUS are the same token kind 43")
+    t |> equal(prec_kind.err_prec, 0)
+    t |> equal(prec_kind.err_rule, -1)
     let no_root <- grammar_from_text([TextRule(lhs = "e", rhs = "NUM")], precs, "f", tokens)
     t |> equal(no_root.err, "root 'f' is not a rule")
     let uminus <- grammar_from_text([TextRule(lhs = "e", rhs = "'-' e %prec UMINUS"), TextRule(lhs = "e", rhs = "NUM")],

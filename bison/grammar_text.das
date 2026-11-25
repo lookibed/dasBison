@@ -45,7 +45,8 @@ struct TextGrammar {
     kinds : array<int>          //!< per terminal: the token kind it stands for, -1 for a `%prec` name
     syms : array<array<TextSymbol>> //!< per production: its symbols as written
     err : string
-    err_rule : int = -1         //!< the rule `err` is about, -1 when it is about the whole grammar
+    err_rule : int = -1         //!< the rule `err` is about, -1 when it is about no rule
+    err_prec : int = -1         //!< the precedence line `err` is about, -1 when it is about none
 }
 
 def private is_name_start(c : int) : bool => is_alpha(c) || c == '_'
@@ -169,9 +170,12 @@ def private prec_term(var g : TextGrammar; var by_kind : table<int; int>; tokens
 // the precedence lines into the builder, each the next level up
 def private declare_precs(var g : TextGrammar; var by_kind : table<int; int>; tokens : table<string; int>;
                           precs : array<TextPrec>) {
-    for (pl in precs) {
+    for (pi, pl in count(), precs) {
         var inscope ids <- [for (name in pl.names); prec_term(g, by_kind, tokens, name)]
-        return if (!empty(g.err))
+        if (!empty(g.err)) {
+            g.err_prec = pi
+            return
+        }
         if (pl.assoc == PrecAssoc.left) {
             prec_left(g.builder, ids)
         } elif (pl.assoc == PrecAssoc.right) {

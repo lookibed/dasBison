@@ -33,6 +33,7 @@ struct private BisonSpec {
     param : string
     rules : array<BisonRule>
     precs : array<TextPrec>
+    prec_sites : array<Expression const?>
     root : string
     err : string
     err_site : Expression const?
@@ -126,6 +127,7 @@ def private collect_prec(var spec : BisonSpec; call : ExprCall?) {
         pl.names |> push(s.value)
     }
     spec.precs |> emplace(pl)
+    spec.prec_sites |> push(call)
 }
 
 def private collect(var spec : BisonSpec; body : ExprBlock?) {
@@ -634,7 +636,7 @@ class BisonMacro : AstFunctionAnnotation {
         var inscope text_rules <- [for (r in spec.rules); TextRule(lhs = r.lhs, rhs = r.rhs)]
         var g <- grammar_from_text(text_rules, spec.precs, spec.root, tk.kinds)
         if (!empty(g.err)) {
-            let site = g.err_rule >= 0 ? spec.rules[g.err_rule].site : null
+            let site = g.err_rule >= 0 ? spec.rules[g.err_rule].site : (g.err_prec >= 0 ? spec.prec_sites[g.err_prec] : null)
             return fail_rule("[bison] {g.err}", site, errors)
         }
         let built <- build_lalr(g.builder, g.root)
