@@ -14,9 +14,9 @@ the others is a defect** - the cell keeps its first action in `action` and every
 keyed by the cell index (`ARCHITECTURE.md#conflicts`).
 
 **A diff that makes `bison/bytes.das` read or write anything of the core but its public builder
-(`LalrBuilder`, `term_id`, `rule_id`, `add_production`, `term_sym`, `rule_sym`), `build_lalr`,
-`lr_parse` and the fields of `LalrTables`, or that adds a byte, a byte class or a byte set to
-`bison/lalr.das`, is a defect** - the byte layer is a front end over the integer core
+(`LalrBuilder`, `term_id`, `rule_id`, `intern`, `add_production`, `term_sym`, `rule_sym`),
+`build_lalr`, `lr_parse` and the fields of `LalrTables`, or that adds a byte, a byte class or a
+byte set to `bison/lalr.das`, is a defect** - the byte layer is a front end over the integer core
 (`ARCHITECTURE.md#byte-adapter`).
 
 **A diff that keys items or (item, lookahead) pairs by a packing with a fixed field width for the

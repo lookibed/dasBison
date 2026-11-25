@@ -63,25 +63,21 @@ def sym_is_rule(s : int) : bool => s < 0
 
 def sym_rule_of(s : int) : int => -1 - s
 
-//! The id of rule `name`, declared on first mention.
-def rule_id(var gb : LalrBuilder; name : string) : int {
-    let found = gb.rule_index?[name] ?? -1
+//! The id of `name` in a name list and its index: its position, the name appended on first mention.
+def intern(var names : array<string>; var index : table<string; int>; name : string) : int {
+    let found = index?[name] ?? -1
     return found if (found >= 0)
-    let id = length(gb.rule_names)
-    gb.rule_names |> push(name)
-    gb.rule_index[name] = id
+    let id = length(names)
+    names |> push(name)
+    index[name] = id
     return id
 }
 
+//! The id of rule `name`, declared on first mention.
+def rule_id(var gb : LalrBuilder; name : string) : int => intern(gb.rule_names, gb.rule_index, name)
+
 //! The id of terminal `name`, declared on first mention.
-def term_id(var gb : LalrBuilder; name : string) : int {
-    let found = gb.term_index?[name] ?? -1
-    return found if (found >= 0)
-    let id = length(gb.term_names)
-    gb.term_names |> push(name)
-    gb.term_index[name] = id
-    return id
-}
+def term_id(var gb : LalrBuilder; name : string) : int => intern(gb.term_names, gb.term_index, name)
 
 //! Make terminal ids `0 .. count-1` exist; the ones not yet named are named `#<id>`.
 def declare_terms(var gb : LalrBuilder; count : int) {

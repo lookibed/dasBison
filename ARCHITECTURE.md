@@ -11,11 +11,12 @@ dasFlex's runtime module `flex/flex`, the only package dasBison requires.
 ## File charters
 
 - `bison/lalr.das` - the core: `LalrBuilder` (`term_id`, `declare_terms`, `rule_id`,
-  `add_production`, `term_sym`, `rule_sym`), `build_lalr` and its result `LalrTables`, the
-  conflict report (`describe_conflicts`, `describe_prod`, `describe_action`), the driver
-  (`lr_parse`, `LrParse`), and `lr_expected`, the expected-set walk over flat tables that
-  `lr_parse` and a `[bison]` parser both call. Knows nothing of bytes or text. `LalrBuilder.prec_terms` and
-  `prec_prods` hold the precedence declarations; only `bison/prec.das` writes or reads them.
+  `add_production`, `term_sym`, `rule_sym`; `intern`, the name table under `term_id`, `rule_id`
+  and the byte adapter's rules), `build_lalr` and its result `LalrTables`, the conflict report
+  (`describe_conflicts`, `describe_prod`, `describe_action`), the driver (`lr_parse`, `LrParse`),
+  and `lr_expected`, the expected-set walk over flat tables that `lr_parse` and a `[bison]`
+  parser both call. Knows nothing of bytes or text. `LalrBuilder.prec_terms` and `prec_prods`
+  hold the precedence declarations; only `bison/prec.das` writes or reads them.
 - `bison/prec.das` - the precedence layer: the declarations (`prec_left`, `prec_right`,
   `prec_nonassoc`, `prec_of_production`), `resolve_precedence` and its `PrecResult` /
   `PrecReport` / `PrecCell`, and `format_report`. Reads the core's tables, never builds them.

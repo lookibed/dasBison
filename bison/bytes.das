@@ -39,14 +39,8 @@ struct Grammar {
 }
 
 //! The id of rule `name`, declared on first mention.
-def rule_id(var gb : GrammarBuilder; name : string) : int {
-    let found = gb.rule_index?[name] ?? -1
-    return found if (found >= 0)
-    let id = length(gb.rule_names)
-    gb.rule_names |> push(name)
-    gb.rule_index[name] = id
-    return id
-}
+def rule_id(var gb : GrammarBuilder; name : string) : int =>
+    intern(gb.rule_names, gb.rule_index, name)
 
 def sym_rule(rule : int) : GrammarSym => GrammarSym(is_rule = true, rule = rule)
 
