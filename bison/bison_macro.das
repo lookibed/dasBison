@@ -247,32 +247,11 @@ def private plan_values(var spec : BisonSpec; g : TextGrammar) : BisonValues {
     return <- vals
 }
 
-def private int_table_global(name : string; vals : array<int>; at : LineInfo;
-                             var errors : das_string) : bool {
-    var mkArr = new ExprMakeArray(at = at, makeType <- typeinfo ast_typedecl(type<int>))
-    for (v in vals) {
-        mkArr.values |> emplace_new <| new ExprConstInt(at = at, value = v)
-    }
-    mkArr.makeType = make_fixed_array_type(length(vals), mkArr.makeType)
-    var mkMove = new ExprCall(at = at, name := "to_array_move")
-    mkMove.arguments |> emplace(mkArr)
-    if (!(compiling_module() |> add_global_private_var(name, at, mkMove))) {
-        errors := "can't add the global {name}"
-        return false
-    }
-    return true
-}
-
-def private string_table_global(name : string; vals : array<string>; at : LineInfo;
-                                var errors : das_string) : bool {
-    var mkArr = new ExprMakeArray(at = at, makeType <- typeinfo ast_typedecl(type<string>))
-    for (v in vals) {
-        mkArr.values |> emplace_new <| new ExprConstString(at = at, value := v)
-    }
-    mkArr.makeType = make_fixed_array_type(length(vals), mkArr.makeType)
-    var mkMove = new ExprCall(at = at, name := "to_array_move")
-    mkMove.arguments |> emplace(mkArr)
-    if (!(compiling_module() |> add_global_private_var(name, at, mkMove))) {
+//! the private global `name` initialized as `to_array_move([vals...])`
+def private table_global(name : string; vals : array<auto>; at : LineInfo;
+                         var errors : das_string) : bool {
+    var init = convert_to_expression(vals, at)
+    if (!(compiling_module() |> add_global_private_var(name, at, init))) {
         errors := "can't add the global {name}"
         return false
     }
@@ -704,12 +683,12 @@ def private add_tables(spec : BisonSpec; g : TextGrammar; t : LalrTables; at : L
     names[t.eof] = "end of input"
     let lhs <- [for (pr in t.prods); pr.lhs]
     let len <- [for (pr in t.prods); length(pr.rhs)]
-    return (int_table_global("{f}`bison`action", t.action, at, errors)
-        && int_table_global("{f}`bison`goto", t.goto_nt, at, errors)
-        && int_table_global("{f}`bison`kind_terms", kind_terms, at, errors)
-        && string_table_global("{f}`bison`names", names, at, errors)
-        && int_table_global("{f}`bison`lhs", lhs, at, errors)
-        && int_table_global("{f}`bison`len", len, at, errors))
+    return (table_global("{f}`bison`action", t.action, at, errors)
+        && table_global("{f}`bison`goto", t.goto_nt, at, errors)
+        && table_global("{f}`bison`kind_terms", kind_terms, at, errors)
+        && table_global("{f}`bison`names", names, at, errors)
+        && table_global("{f}`bison`lhs", lhs, at, errors)
+        && table_global("{f}`bison`len", len, at, errors))
 }
 
 [function_macro(name="bison")]
