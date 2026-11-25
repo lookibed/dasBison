@@ -154,8 +154,9 @@ that is some rule's left-hand side is that rule, one that is a member of `Enum` 
 the member's value as its kind, a quoted character (`'+'`, `'\''`) is the token whose kind is its
 byte, an empty string is the epsilon production, and a trailing `%prec NAME` gives the production
 the level of `NAME`. A precedence argument is a token name, a quoted character or a bare
-punctuation character; a name neither a token nor a quoted character is a pseudo-terminal no
-kind reaches (yacc's `%prec UMINUS`). `scan` is the `[flex]` function the parser pulls tokens
+punctuation character, which names the token a right-hand side writes quoted (`\` is `'\\'`);
+a name neither a token nor a quoted character is a pseudo-terminal no kind reaches (yacc's
+`%prec UMINUS`). `scan` is the `[flex]` function the parser pulls tokens
 from: one token per call, `p.lexer.tok.kind` its kind, `false` at the end of input or on a lexer
 error. The enum is read from the AST at parse time, so a member's value is an integer literal of any
 width or sign (a typed enum's `200u8` included), `-` before one, or the previous member's plus

@@ -280,6 +280,19 @@ def test_text_grammar(t : T?) {
     t |> equal(uminus.kinds[uminus.builder.term_index?["UMINUS"] ?? 0], -1)
 }
 
+[test(description = "a bare backslash or quote as a precedence argument is the token a right-hand side writes quoted and escaped, not a second name for its kind")]
+def test_prec_escapes(t : T?) {
+    let tokens <- { "NUM" => 256 }
+    let rules <- [TextRule(lhs = "e", rhs = "e '\\\\' e"), TextRule(lhs = "e", rhs = "e '\\'' e"),
+                  TextRule(lhs = "e", rhs = "NUM")]
+    let g <- grammar_from_text(rules, [TextPrec(assoc = PrecAssoc.left, names <- ["\\", "'"])], "",
+                               tokens)
+    t |> equal(g.err, "")
+    t |> equal(g.kinds, ['\\', '\'', 256])
+    t |> equal(g.builder.prec_terms[0].x, 1)
+    t |> equal(g.builder.prec_terms[1].x, 1)
+}
+
 var private g_seen : array<string>
 
 enum LTok {

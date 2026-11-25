@@ -67,6 +67,14 @@ def private quoted_char(bytes : array<uint8>; i : int) : int2 {
     return int2(-1, i)
 }
 
+// the quoted character as a right-hand side writes byte `c`: `'+'`, and `'\\'`, `'\''`, `'\n'`,
+// `'\t'`, `'\r'` escaped as `quoted_char` reads them
+def private quoted_name(c : int) : string {
+    let esc = (c == '\\' ? "\\\\" : c == '\'' ? "\\'" : c == '\n' ? "\\n" : c == '\t' ? "\\t"
+        : c == '\r' ? "\\r" : "")
+    return empty(esc) ? "'{to_char(c)}'" : "'{esc}'"
+}
+
 //! Read a right-hand side: names, quoted characters, and an optional trailing `%prec NAME`.
 def parse_rhs(text : string) : TextRhs {
     var res : TextRhs
@@ -109,7 +117,8 @@ def parse_rhs(text : string) : TextRhs {
                 res.syms |> push(TextSymbol(name = slice(bytes, i, q.y), ch = q.x))
             }
             i = q.y
-        } elif (c == '%' && slice(bytes, i, i + 5) == "%prec" && !(i + 5 < n && is_name_char(int(bytes[i + 5])))) {
+        } elif (c == '%' && slice(bytes, i, i + 5) == "%prec"
+                && !(i + 5 < n && is_name_char(int(bytes[i + 5])))) {
             want_prec = true
             i += 5
         } else {
@@ -125,7 +134,8 @@ def parse_rhs(text : string) : TextRhs {
 
 // the terminal of token kind `kind` named `name`, declared on first use; -1 (and `g.err`) when
 // another name already stands for the same kind
-def private kind_term(var g : TextGrammar; var by_kind : table<int; int>; name : string; kind : int) : int {
+def private kind_term(var g : TextGrammar; var by_kind : table<int; int>; name : string;
+                      kind : int) : int {
     let found = by_kind?[kind] ?? -1
     if (found >= 0) {
         let have = g.builder.term_names[found]
@@ -145,11 +155,11 @@ def private kind_term(var g : TextGrammar; var by_kind : table<int; int>; name :
 
 // a precedence or `%prec` name: a quoted or bare punctuation character, a token, or else a name of
 // its own that no token kind reaches (yacc's `%prec UMINUS`)
-def private prec_term(var g : TextGrammar; var by_kind : table<int; int>; tokens : table<string; int>;
-                      name : string) : int {
+def private prec_term(var g : TextGrammar; var by_kind : table<int; int>;
+                      tokens : table<string; int>; name : string) : int {
     let bytes <- to_bytes(name)
     if (length(bytes) == 1 && !is_name_char(int(bytes[0]))) {
-        return kind_term(g, by_kind, "'{name}'", int(bytes[0]))
+        return kind_term(g, by_kind, quoted_name(int(bytes[0])), int(bytes[0]))
     }
     let q = !empty(bytes) && int(bytes[0]) == '\'' ? quoted_char(bytes, 0) : int2(-1, 0)
     if (q.x >= 0 && q.y == length(bytes)) {
@@ -168,8 +178,8 @@ def private prec_term(var g : TextGrammar; var by_kind : table<int; int>; tokens
 }
 
 // the precedence lines into the builder, each the next level up
-def private declare_precs(var g : TextGrammar; var by_kind : table<int; int>; tokens : table<string; int>;
-                          precs : array<TextPrec>) {
+def private declare_precs(var g : TextGrammar; var by_kind : table<int; int>;
+                          tokens : table<string; int>; precs : array<TextPrec>) {
     for (pi, pl in count(), precs) {
         var inscope ids <- [for (name in pl.names); prec_term(g, by_kind, tokens, name)]
         if (!empty(g.err)) {
@@ -187,8 +197,8 @@ def private declare_precs(var g : TextGrammar; var by_kind : table<int; int>; to
 }
 
 // one rule's production and its `%prec`; `g.err` says what is wrong with it
-def private add_text_rule(var g : TextGrammar; var by_kind : table<int; int>; tokens : table<string; int>;
-                          r : TextRule) {
+def private add_text_rule(var g : TextGrammar; var by_kind : table<int; int>;
+                          tokens : table<string; int>; r : TextRule) {
     var inscope parsed <- parse_rhs(r.rhs)
     if (!empty(parsed.err)) {
         g.err = parsed.err
