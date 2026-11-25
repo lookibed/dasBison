@@ -68,22 +68,6 @@ class private ReturnScan : AstVisitor {
     }
 }
 
-class private MarkGenerated : AstVisitor {
-    def override preVisitExpression(var expr : ExpressionPtr) {
-        expr.genFlags.generated = true
-    }
-}
-
-def private mark_generated(var body : ExpressionPtr) {
-    var marker = new MarkGenerated()
-    make_visitor(*marker) $(adapter) {
-        visit_expression(body, adapter)
-    }
-    unsafe {
-        delete marker
-    }
-}
-
 //! whether an action yields a value: its declared result type, else a `return <value>` in it
 def private block_yields(var blk : ExprBlock?) : bool {
     if (blk.returnType != null && !blk.returnType.isAuto) {
@@ -533,7 +517,7 @@ def private make_driver(spec : BisonSpec; g : TextGrammar; t : LalrTables; vals 
             (body as ExprBlock).list |> push(e)
         }
     }
-    mark_generated(body)
+    force_generated(body, true)
     return body
 }
 
