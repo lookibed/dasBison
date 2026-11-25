@@ -4,9 +4,10 @@
 doc: `ARCHITECTURE.md`.
 
 **A diff under `bison/` that adds a `require` of a module other than one under `bison/`, one under
-`daslib/`, or a builtin module the daslang executable registers itself (such as `strings` or
-`math`) is a defect** - the package is installed by `daspkg` into projects that load nothing else
-under `modules/`.
+`daslib/`, a builtin module the daslang executable registers itself (such as `strings` or
+`math`), or - in `bison/bison_parser.das` and `bison/bison_macro.das` only - dasFlex's `flex/flex`,
+is a defect** - the package is installed by `daspkg` into projects that load nothing else under
+`modules/` but its one declared dependency, dasFlex.
 
 **A diff that resolves a table cell more than one action claims by keeping one action and dropping
 the others is a defect** - the cell keeps its first action in `action` and every other in `alt`,
@@ -45,3 +46,27 @@ of what precedence and the default decided (`ARCHITECTURE.md#precedence`).
 **A diff that changes the expected counts of `tests/c11_tests.das` (479 states, 98 classes, 2
 conflicts on both paths) names the reason in its description** - they are dasLR1's own counts for
 the same grammar.
+
+**A diff that makes a `[bison]` function, or anything the code it generates calls, build or
+resolve LALR tables when the program runs is a defect** - the macro builds them at compile time
+and emits them as globals (`ARCHITECTURE.md#compile-time-tables`).
+
+**A diff that lets `[bison]` accept a grammar with a conflict yacc's default resolved without the
+compile warning, other than when `expected` equals the shift/reduce count and no reduce/reduce
+conflict is left, is a defect** (`ARCHITECTURE.md#compile-time-tables`).
+
+**A diff that lets a `[bison]` grammar name a symbol that is neither a rule nor a token, or give
+two names one token kind, without a compile error at the rule's line is a defect**
+(`ARCHITECTURE.md#macro`).
+
+**A diff that lets two actions of one rule return different types, or a production pass on a
+value of another type than its rule's, compile without an error at the rule's line is a defect** -
+the value stacks are typed by each rule's first action (`ARCHITECTURE.md#values`).
+
+**A diff that makes the generated driver pass an action's arguments as calls in the argument list,
+rather than as locals popped last symbol first, is a defect** - argument evaluation order is not
+defined, and two pops from one stack would swap (`ARCHITECTURE.md#macro-driver`).
+
+**A diff that makes a `[bison]` parse error report a position, a token name or an expected set
+other than the refused token's, the grammar's names, and the reduce chains' set, or return without
+setting `failed`, is a defect** (`ARCHITECTURE.md#macro-errors`).

@@ -1,7 +1,73 @@
 # dasBison
 
-A parser generator for [daslang](https://daslang.io/): LALR(1) tables built at run time over
-integer terminal ids, a byte-class front end over the same core, and a deterministic driver.
+A parser generator for [daslang](https://daslang.io/): LALR(1) tables over integer terminal ids, a
+byte-class front end over the same core, a deterministic driver, and a `[bison]` macro that builds
+the tables when the module compiles and turns a function into a typed parser over a
+[dasFlex](https://github.com/lookibed/dasFlex) lexer.
+
+```das
+options gen2
+require flex/flex_macro
+require bison/bison_macro
+require strings
+
+enum CTok {
+    NUM = 256           // punctuators need no member: the lexer emits their byte
+}
+
+[flex]
+def calc_lex(var lx : FlexLexer) : bool {
+    rule("[0-9]+(\\.[0-9]+)?") {
+        lx |> emit(CTok.NUM)
+    }
+    rule("[\\-+*/()]") {
+        lx |> emit(first_character(text(lx)))
+    }
+    rule("[ \\t\\r\\n]+") {
+    }
+}
+
+[bison(tokens = CTok, lexer = calc_lex)]
+def calc(var p : Parser) : float {
+    prec_left("+", "-")                 // yacc order: a later line binds tighter
+    prec_left("*", "/")
+    rule("expr", "expr '+' expr") <| $(a : float; b : float) : float {
+        return a + b
+    }
+    rule("expr", "expr '-' expr") <| $(a, b : float) => a - b
+    rule("expr", "expr '*' expr") <| $(a, b : float) => a * b
+    rule("expr", "expr '/' expr") <| $(a, b : float) => a / b
+    rule("expr", "'(' expr ')'") <| $(e : float) => e
+    rule("expr", "NUM") <| $(t : FlexToken) => to_float(text(p.lexer, t))
+    root("expr")
+}
+
+[export]
+def main() {
+    var p : Parser
+    parser_open(p, "(1 + 2) * 3", "input.txt")
+    let v = calc(p)                     // 9
+    if (p.failed) {
+        print("{p.err}\n")              // input.txt:1:4: unexpected ..., expected one of: ...
+    }
+}
+```
+
+- A right-hand side is text: a rule's name, a member of the `tokens` enum (its value is the kind),
+  a quoted character (the token whose kind is that byte), `""` for epsilon, a trailing `%prec NAME`.
+  `prec_left` / `prec_right` / `prec_nonassoc` take token names or characters; `root` defaults to
+  the first rule.
+- The action's arguments are the values of the symbols that carry one, in order - rules that yield,
+  and named tokens as their `FlexToken` (`text(p.lexer, t)` is its text) - or none at all. A rule's
+  type is what its actions return; a rule with no action passes its one value on; a rule whose
+  actions return nothing yields no value. The root's value is the function's result.
+- A conflict precedence leaves to yacc's default is a compile warning in `bison -v` words, unless
+  `[bison(expected = N)]` (yacc's `%expect`) names the shift/reduce count.
+- A refused token sets `p.failed`, `p.line`, `p.col` and `p.err`
+  (`file:line:col: unexpected TOKEN, expected one of: a, b, c`) and the function returns the default
+  value. Walk-through: `tutorials/01_calculator.das`.
+
+The core runs without the macro:
 
 ```das
 options gen2
@@ -77,7 +143,8 @@ Byte grammars - terminals as byte sets - go through `bison/bytes`: `GrammarBuild
 `sym_bytes`, `sym_rule`, `build_grammar(gb, root) : Grammar` with `byte_class`, `nclasses` and
 the core's `tables`; `lr_parse_bytes(g, "text")` parses a string.
 
-Install: `daspkg install github.com/lookibed/dasBison`, then `require bison/lalr` or
-`require bison/bytes`. Run the tests from a daslang checkout:
-`daslang -load_module <dasBison> dastest/dastest.das -- --test <dasBison>/tests`. Design and the
+Install: `daspkg install github.com/lookibed/dasBison` (it brings dasFlex), then
+`require bison/bison_macro`, `require bison/lalr` or `require bison/bytes`. Run the tests from a
+daslang checkout:
+`daslang -load_module <dasBison> -load_module <dasFlex> dastest/dastest.das -- --test <dasBison>/tests`. Design and the
 rules a change must keep: `ARCHITECTURE.md`, `REVIEW.md`.
