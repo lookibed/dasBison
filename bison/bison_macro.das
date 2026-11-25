@@ -14,6 +14,7 @@ require bison/lalr
 require bison/prec
 require bison/grammar_text
 require bison/bison_parser public
+require bison/bison_reader public
 
 // `[bison(tokens = Enum, lexer = scan)]` on `def name(var p : Parser) : T { rule(...) ... }` reads
 // the grammar at compile time, builds and resolves its LALR(1) tables, stores them as private
