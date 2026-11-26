@@ -68,6 +68,10 @@ the value stacks are typed by each rule's first action (`ARCHITECTURE_MACRO.md#v
 rather than as locals popped last symbol first, is a defect** - argument evaluation order is not
 defined, and two pops from one stack would swap (`ARCHITECTURE_MACRO.md#macro-driver`).
 
+**A diff that makes the generated driver, or a helper it calls, name `FlexLexer` or `FlexToken`,
+or read a field of the lexer or its token the lexer contract does not name, is a defect** - another
+lexer plugs in by those field names alone (`ARCHITECTURE_MACRO.md#lexer-contract`).
+
 **A diff that makes a `[bison]` parse error report a position, a token name or an expected set
 other than the refused token's, the grammar's names, and the reduce chains' set, or return without
 setting `failed`, is a defect** (`ARCHITECTURE_MACRO.md#macro-errors`).
