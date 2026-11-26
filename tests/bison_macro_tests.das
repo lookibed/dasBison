@@ -787,6 +787,21 @@ def test_conflict_warning_paths(t : T?) {
     }
 }
 
+[test(description = "a grammar with no shift/reduce conflict and one reduce/reduce conflict, left without expected, still warns: the log line names both counts")]
+def test_conflict_warning_reduce_reduce_only(t : T?) {
+    let body = ("    rule(\"A\", \"B\") <| $(b : int) => b\n"
+        + "    rule(\"S\", \"B\") <| $(b : int) => b\n"
+        + "    rule(\"B\", \"A\")\n"
+        + "    rule(\"B\", \"NUM\") <| $(n : FlexToken) => 1\n"
+        + "    root(\"S\")\n")
+    var issues = ""
+    let hits = logged_hits("warn_rr.das:14: [bison] calc: 0 shift/reduce, 1 reduce/reduce conflicts, resolved by default:\nState ") $ {
+        issues = compile_issues("warn_rr.das", grammar_module(body))
+    }
+    t |> equal(issues, "")
+    t |> equal(hits, 1)
+}
+
 //! the enum `tok_module`'s grammar reads `NUM` from
 let private TOK_ENUM = "enum Tok \{\n    NUM = 256\n\}\n"
 
