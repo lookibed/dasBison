@@ -17,9 +17,10 @@ require bison/grammar_text
 require bison/bison_parser public
 require bison/bison_reader public
 
-// `[bison(tokens = Enum, lexer = scan)]` on `def name(var p : Parser) : T { rule(...) ... }` reads
-// the grammar at compile time, builds and resolves its LALR(1) tables, stores them as private
-// module globals, turns every action into a private function and rewrites the body into the driver.
+// `[bison(tokens = Enum, lexer = scan)]` on `def name(var p : Parser) : T { rule(...) ... }` - or a
+// parser struct of another lexer with the same field names - reads the grammar at compile time,
+// builds and resolves its LALR(1) tables, stores them as private module globals, turns every
+// action into a private function and rewrites the body into the driver.
 
 //! One `rule(...)` call: its text, its action block (null for none) and what the action yields.
 struct private BisonRule {
@@ -460,7 +461,7 @@ def private make_driver(spec : BisonSpec; g : TextGrammar; t : LalrTables; vals 
     var head <- qmacro_block_to_array() {
         var bison`none : $t(rtype)
         var bison`states : array<int>
-        var bison`toks : array<FlexToken>
+        var bison`toks : array<typedecl($i(p).lexer.tok) -const -&>
         var bison`saved : array<int>
     }
     var run <- qmacro_block_to_array() {
@@ -540,7 +541,7 @@ def private bison_args(args : AnnotationArgumentList) : BisonArgs {
     let expected_arg = find_arg(args, "expected")
     ba.expected = expected_arg is tInt ? expected_arg as tInt : -1
     if (empty(ba.tokens) || empty(ba.lexer)) {
-        ba.err = "[bison] needs tokens = <the token enum> and lexer = <the [flex] function>"
+        ba.err = "[bison] needs tokens = <the token enum> and lexer = <the scan function>"
     } elif (!(expected_arg is nothing) && ba.expected < 0) {
         ba.err = "[bison] expected = N takes the number of shift/reduce conflicts, an int of 0 or more"
     }

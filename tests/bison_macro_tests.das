@@ -179,6 +179,98 @@ def ifs(var p : Parser) : string {
     rule("stmt", "X") <| $() => "x"
 }
 
+//! a hand-written lexer's token: the fields the generated driver reads, `kind`, `line`, `col`, and a
+//! value of its own
+struct HandToken {
+    kind : int
+    line : int
+    col : int
+    value : int
+}
+
+//! a hand-written lexer, no dasFlex in it: the fields the generated driver reads, by name
+struct HandLexer {
+    src : array<int>                //!< the input's characters
+    pos : int
+    line : int
+    col : int
+    tok : HandToken
+    failed : bool
+    err : string
+    file : string
+}
+
+struct HandParser : ParserStatus {
+    lexer : HandLexer
+}
+
+enum HTok {
+    NUM = 256
+}
+
+//! one token per call: a number with its value, or one of `+ * ( )`; `false` at the end, and on
+//! any other byte with `failed` set
+def hand_scan(var lx : HandLexer) : bool {
+    while (lx.pos < length(lx.src) && lx.src[lx.pos] == ' ') {
+        lx.pos++
+        lx.col++
+    }
+    return false if (lx.pos >= length(lx.src))
+    let c = lx.src[lx.pos]
+    lx.tok = HandToken(kind = c, line = lx.line, col = lx.col)
+    if (is_number(c)) {
+        lx.tok.kind = int(HTok.NUM)
+        while (lx.pos < length(lx.src) && is_number(lx.src[lx.pos])) {
+            lx.tok.value = lx.tok.value * 10 + lx.src[lx.pos] - '0'
+            lx.pos++
+            lx.col++
+        }
+        return true
+    }
+    if (c != '+' && c != '*' && c != '(' && c != ')') {
+        lx.failed = true
+        lx.err = "{lx.line}:{lx.col}: no token starts with '{to_char(c)}'"
+        return false
+    }
+    lx.pos++
+    lx.col++
+    return true
+}
+
+def hand_open(var p : HandParser; src : string) {
+    p.lexer <- HandLexer(src <- [for (c in src); c], line = 1, col = 1, file = "hand.txt")
+    p.failed = false
+}
+
+[bison(tokens = HTok, lexer = hand_scan)]
+def hand_calc(var p : HandParser) : int {
+    prec_left("+")
+    prec_left("*")
+    rule("e", "e '+' e") <| $(a, b : int) => a + b
+    rule("e", "e '*' e") <| $(a, b : int) => a * b
+    rule("e", "'(' e ')'")
+    rule("e", "NUM") <| $(t : HandToken) => t.value
+}
+
+[test(description = "a hand-written lexer struct whose token has the driver's field names drives a [bison] grammar: its token type is the action's argument, and a refused token and the lexer's own error report as with dasFlex")]
+def test_hand_lexer(t : T?) {
+    var p : HandParser
+    hand_open(p, "2 + 3 * (4 + 10)")
+    t |> equal(hand_calc(p), 44)
+    t |> success(!p.failed, p.err)
+    hand_open(p, "2 +")
+    t |> equal(hand_calc(p), 0)
+    t |> equal(p.err, "hand.txt:1:4: unexpected end of input, expected one of: '(', NUM")
+    hand_open(p, "2 3")
+    hand_calc(p)
+    t |> equal(p.err, "hand.txt:1:3: unexpected NUM, expected one of: '+', '*', end of input")
+    hand_open(p, "2 + x")
+    hand_calc(p)
+    t |> equal(p.err, "1:5: no token starts with 'x'")
+    t |> equal(p.line, 1)
+    t |> equal(p.col, 5)
+}
+
 enum MTok {
     A = 1
     B
@@ -894,5 +986,5 @@ def test_macro_errors(t : T?) {
                    "[bison] takes one argument: var p : Parser")
     let no_lexer = replace(grammar_module(NUM_RULE), "lexer = lx)", "expected = 0)")
     t |> has_issue(compile_issues("no_lexer.das", no_lexer),
-                   "[bison] needs tokens = <the token enum> and lexer = <the [flex] function>")
+                   "[bison] needs tokens = <the token enum> and lexer = <the scan function>")
 }
