@@ -79,6 +79,9 @@ module that requires `daslib/style_lint`, reports into the compile (`macro_style
 runner's `*_collect` call gets an array; a bare call logs. No caller hands an annotation an array,
 so the warning is `macro_style_warning` at the function when the module sees `style_lint`, and
 `to_log(LOG_WARNING, ...)` otherwise - a lint runner's compile included, so it does not fail the file.
+`style_lint_armed` is the twin of `daslib/style_lint`'s private `st048_requires_match` - the
+program's modules scanned for one the compiling module sees directly - and a public daslib "module
+X is visible from here" helper would fold the two.
 
 ## The generated driver {#macro-driver}
 

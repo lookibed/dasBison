@@ -7,6 +7,7 @@ require bison/grammar_text
 require bison/lalr
 require bison/prec
 require flex/flex_macro
+require daslib/debugger
 require daslib/strings_boost
 require math
 require _compile_issues
@@ -715,16 +716,75 @@ def test_expected_mismatch(t : T?) {
                    "[bison] calc: expected 0 reduce/reduce conflicts, found 1:\nState ")
 }
 
-[test(description = "a conflict left without expected is a warning the style lint's way: a module that requires daslib/style_lint gets it as a style warning at the [bison] function, a plain compile and a lint runner's compile stay clean")]
+//! the debug agent category `LogCapture` is installed under
+let private LOG_CAPTURE = "bison_macro_tests_log"
+
+//! the `[bison]` lines `to_log` wrote while the agent was installed, kept in the agent's context
+var private captured : array<string>
+
+//! keeps every `[bison]` log line, from any context, and holds it back from the output
+class private LogCapture : DapiDebugAgent {
+    def override onLog(context : Context?; at : LineInfo const?; level : int; text : string#) : bool {
+        return false if (find(text, "[bison]") < 0)
+        captured |> push(clone_string(text))
+        return true
+    }
+}
+
+//! the agent context's setup: `fork_debug_agent_context` runs it there
+def setup_log_capture(_ctx : Context) {
+    install_new_debug_agent(new LogCapture(), LOG_CAPTURE)
+}
+
+//! run in the agent's context: how many captured lines hold `needle`
+[export, pinvoke]
+def captured_hits(needle : string; var hits : int?) {
+    *hits = 0
+    for (line in captured) {
+        *hits += find(line, needle) >= 0 ? 1 : 0
+    }
+}
+
+//! how many `[bison]` log lines `blk`'s compiles wrote that hold `needle`
+def private logged_hits(needle : string; blk : block) : int {
+    fork_debug_agent_context(@@setup_log_capture)
+    invoke(blk)
+    var hits = 0
+    unsafe {
+        invoke_in_context(get_debug_agent_context(LOG_CAPTURE), "captured_hits", needle, addr(hits))
+    }
+    delete_debug_agent_context(LOG_CAPTURE)
+    return hits
+}
+
+//! `unroll` over a run-time range: only a lint runner's compile takes it, so a module that ends
+//! with it compiles clean only the way the runner compiles
+let private LINT_ONLY = "def spin(n : int) \{\n    unroll() $ \{\n        for (i in range(n)) \{\n            pass\n        \}\n    \}\n\}\n"
+
+[test(description = "a conflict left without expected is a warning the style lint's way: a module that requires daslib/style_lint gets it as a style warning at the [bison] function; a plain compile, a lint runner's compile and a module whose helper alone requires style_lint stay clean and log it")]
 def test_conflict_warning_paths(t : T?) {
-    t |> equal(compile_issues("warn_plain.das", dangling_module("", "")), "")
     let warning = "[bison] ifs: 1 shift/reduce, 0 reduce/reduce conflicts, resolved by default:\nState 4 conflicts: 1 shift/reduce\n"
     let linted = compile_issues("warn_lint.das", dangling_module("require daslib/style_lint", ""))
     t |> has_issue(linted, warning)
     t |> has_issue(linted, "warn_lint.das:20:")
     t |> has_issue(linted, "31209")
     let none : array<VirtualFile>
-    t |> equal(compile_issues("warn_runner.das", dangling_module("", ""), none, true), "")
+    let helper = [(name = "warn_helper.das",
+                   text = "options gen2\nmodule warn_helper public\nrequire daslib/style_lint\ndef helper_one() : int => 1\n")]
+    for (f in ["warn_plain.das", "warn_runner.das", "warn_private.das"]) {
+        var issues = ""
+        let hits = logged_hits("{f}:20: {warning}") $ {
+            if (f == "warn_plain.das") {
+                issues = compile_issues(f, dangling_module("", ""))
+            } elif (f == "warn_runner.das") {
+                issues = compile_issues(f, dangling_module("require daslib/unroll", "") + LINT_ONLY, none, true)
+            } else {
+                issues = compile_issues(f, dangling_module("require warn_helper", ""), helper)
+            }
+        }
+        t |> equal(issues, "")
+        t |> equal(hits, 1)
+    }
 }
 
 //! the enum `tok_module`'s grammar reads `NUM` from
