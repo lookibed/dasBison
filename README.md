@@ -70,11 +70,14 @@ def main() {
   (`file:line:col: unexpected TOKEN, expected one of: a, b, c`) and the function returns the default
   value. Walk-through: `tutorials/01_calculator.das`.
 - Another lexer plugs in by field names, its tokens unconverted: the function takes any struct
-  with `ParserStatus`'s fields (`failed`, `err`, `line`, `col`) and a `lexer` that `lexer = scan`
-  advances - `scan(var lx) : bool`, the token in `lx.tok` (`kind`, `line`, `col`, and any fields of
-  its own), `lx.failed`, `lx.err`, `lx.line`, `lx.col` and `lx.file` for an error. An action takes
-  the token as that type: `struct MyParser : ParserStatus { lexer : MyLexer }`, then
-  `rule("e", "NUM") <| $(t : MyToken) => t.value`.
+  with `ParserStatus`'s fields (`failed : bool`, `err : string`, `line`, `col : int`) and a `lexer`
+  that `lexer = scan` advances - `scan(var lx) : bool`, the token in `lx.tok` (`kind : int`,
+  `line`, `col : int`, and any fields of its own), `lx.failed : bool`, `lx.err : string`,
+  `lx.line`, `lx.col : int` and `lx.file : string` for an error. The token is a plain value - the
+  driver copies each one it shifts, so an array field is a compile error, as is a `kind` of an
+  enum type. An action takes the token as that type: `struct MyParser : ParserStatus { lexer :
+  MyLexer }`, then `rule("e", "NUM") <| $(t : MyToken) => t.value`. `%bison~` still writes
+  `var p : Parser`, so another lexer goes through `[bison]` only.
 
 The calculator as yacc-like text, with a unary minus - `%bison~` at module level writes a `[bison]`
 function like the one above:

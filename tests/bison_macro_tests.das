@@ -271,6 +271,33 @@ def test_hand_lexer(t : T?) {
     t |> equal(p.col, 5)
 }
 
+//! a module whose `[bison]` parser reads a hand-written lexer, its token `Token` holding `fields`
+//! besides `line` and `col`
+def private hand_module(fields : string) : string {
+    return ("options gen2\nrequire bison/bison_macro\nenum Tok \{\n    NUM = 256\n\}\n"
+        + "struct Token \{\n{fields}    line : int\n    col : int\n\}\n"
+        + "struct Lexer \{\n    tok : Token\n    failed : bool\n    err : string\n    line : int\n"
+        + "    col : int\n    file : string\n\}\n"
+        + "struct HandParser : ParserStatus \{\n    lexer : Lexer\n\}\n"
+        + "def scan(var lx : Lexer) : bool \{\n    return false\n\}\n"
+        + "[bison(tokens = Tok, lexer = scan)]\ndef calc(var p : HandParser) : int \{\n"
+        + "    rule(\"e\", \"NUM\") <| $(n : Token) => 1\n\}\n")
+}
+
+[test(description = "the lexer's token is a plain value: a token with an array field, or with a kind that is not an int, fails the compile at the [bison] function with the field named; a string field copies")]
+def test_token_contract(t : T?) {
+    let array_field = hand_module("    kind : int\n    payload : array<int>\n")
+    let payload = compile_issues("tok_array.das", array_field)
+    t |> has_issue(payload, "[bison] calc: the lexer's token type Token is not copyable (field payload); a token must be a plain value - keep arrays out of it")
+    t |> has_issue(payload, "tok_array.das:")
+    t |> success(find(payload, "can't push value") < 0, payload)
+    let enum_kind = compile_issues("tok_enum.das", hand_module("    kind : Tok\n"))
+    t |> has_issue(enum_kind, "[bison] calc: the lexer's token type Token has kind : Tok; the driver reads tok.kind as an int")
+    t |> success(find(enum_kind, "30341") < 0, enum_kind)
+    let string_field = hand_module("    kind : int\n    text : string\n")
+    t |> equal(compile_issues("tok_string.das", string_field), "")
+}
+
 enum MTok {
     A = 1
     B

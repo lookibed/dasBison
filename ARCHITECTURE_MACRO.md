@@ -34,12 +34,21 @@ which bounds kinds to `0 .. 65535`.
 The generated driver reads the lexer by field name, not by type: the macro emits the driver per
 function, and inference types each read against the parser struct that function takes - `Parser`
 for a dasFlex lexer, or any struct with `ParserStatus`'s fields (`failed`, `err`, `line`, `col`)
-and a `lexer`. `scan(p.lexer)` returns `true` with the token in `lexer.tok`, or `false` at the end
-of input or, with `lexer.failed` set, on an error the lexer words in `lexer.err` at `lexer.line` /
-`lexer.col`; `lexer.file` names the input, `""` none. Of a token the driver reads `kind`, `line`
-and `col`, and it keeps the token whole on `array<typedecl(p.lexer.tok)>`, so a token with more
-fields (a pp-token's `has_space`, `at_bol`, `sym`) or other ones (a hand-written lexer's value)
-reaches an action as it was scanned, typed as the action's argument. The two helpers that read the
+and a `lexer`, the status fields typed as `ParserStatus` types them (`failed : bool`, `err :
+string`, `line`, `col : int`). `scan(var lexer) : bool` returns `true` with the token in
+`lexer.tok`, or `false` at the end of input or, with `lexer.failed : bool` set, on an error the
+lexer words in `lexer.err : string` at `lexer.line` / `lexer.col : int`; `lexer.file : string`
+names the input, `""` none. Of a token the driver reads `kind : int`, `line` and `col : int`, and
+it keeps the token whole on `array<typedecl(p.lexer.tok)>`, so a token with more fields (a
+pp-token's `has_space`, `at_bol`, `sym`) or other ones (a hand-written lexer's value) reaches an
+action as it was scanned, typed as the action's argument. A token is a plain value: the driver
+copies every token it shifts onto that stack, so a token carrying an array would allocate per
+shift. The macro reads the parser struct, its `lexer` and its token from the AST before inference
+and fails the compile at the function when a field of the token does not copy or `kind` is not an
+`int`, naming the field; a type declared after the function is not resolved there and goes to
+inference unchecked, which reports the builtin error at the driver.
+The `%bison~` reader writes `var p : Parser` (`#reader`), so another lexer drives a grammar
+through `[bison]` only. The two helpers that read the
 parser, `bison_lexer_failed` and `bison_syntax_error`, are generic in it. There is no interface
 class: one would put a virtual call per token on the driver's path and a conversion of every token
 into the interface's type. For `Parser` the driver compiles to the interpreter nodes the
