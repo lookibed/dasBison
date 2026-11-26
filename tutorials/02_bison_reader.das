@@ -35,7 +35,8 @@ def calc_lex(var lx : FlexLexer) : bool {
 // `def name(var p : Parser) : Type`, the same function [bison] generates - the reader writes that
 // [bison] function and the macro builds it. Before `%rules`: the precedence lines in yacc's order
 // (a later line binds tighter), and `%expect N`, the shift/reduce conflicts the grammar is meant to
-// have. After it, yacc's rules: `name : symbols { action } | ... ;`. The first rule is the root.
+// have - another count fails the compile. After it, yacc's rules: `name : symbols { action } |
+// ... ;`. The first rule is the root.
 //
 // In an action `$n` is the value of the n-th symbol of the right-hand side - a rule's value, or a
 // named token's FlexToken - and `$$ = value` returns the rule's value. The root's values are of the

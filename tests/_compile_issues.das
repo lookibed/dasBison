@@ -17,8 +17,10 @@ def compile_issues(name, text : string) : string {
     return compile_issues(name, text, none)
 }
 
-//! compiles `text` as the virtual file `name` beside the virtual files `others` it may require
-def compile_issues(name, text : string; others : array<VirtualFile>) : string {
+//! compiles `text` as the virtual file `name` beside the virtual files `others` it may require;
+//! `lint_check` compiles it the way a lint runner does
+def compile_issues(name, text : string; others : array<VirtualFile>;
+                   lint_check : bool = false) : string {
     var out = ""
     var inscope access <- make_file_access("")
     for (f in others) {
@@ -27,6 +29,7 @@ def compile_issues(name, text : string; others : array<VirtualFile>) : string {
     set_file_source(access, name, text)
     using() $(var mg : ModuleGroup) {
         using() $(var cop : CodeOfPolicies) {
+            cop.lint_check = lint_check
             compile_file(name, access, unsafe(addr(mg)), cop) $(ok; _program; issues) {
                 out = ok ? "" : string(issues)
             }

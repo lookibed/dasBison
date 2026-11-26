@@ -261,13 +261,25 @@ def grammar_from_text(rules : array<TextRule>; precs : array<TextPrec>; root : s
     return <- g
 }
 
-//! The compile warning a grammar's default-resolved conflicts give, "" when there is none to give:
-//! no conflict is left, or `expected` (yacc's `%expect`, -1 when absent) is the shift/reduce count
-//! and no reduce/reduce conflict is left.
-def conflict_warning(name : string; report : PrecReport; expected : int) : string {
+//! The compile warning a grammar with no `expected` gives for its default-resolved conflicts, ""
+//! when no conflict is left.
+def conflict_warning(name : string; report : PrecReport) : string {
     let sr = report.shift_reduce
     let rr = report.reduce_reduce
-    return "" if (rr == 0 && (expected >= 0 ? sr == expected : sr == 0))
-    let wanted = expected >= 0 ? " (expected = {expected})" : ""
-    return "[bison] {name}: {sr} shift/reduce, {rr} reduce/reduce conflicts{wanted}, resolved by default:\n{format_report(report)}"
+    return "" if (sr == 0 && rr == 0)
+    return "[bison] {name}: {sr} shift/reduce, {rr} reduce/reduce conflicts, resolved by default:\n{format_report(report)}"
+}
+
+//! The compile error of a grammar whose conflicts are not the ones `expected` (yacc's `%expect`)
+//! names, "" when they are: bison's two counts, `expected` shift/reduce and no reduce/reduce one.
+def conflict_mismatch(name : string; report : PrecReport; expected : int) : string {
+    let sr = report.shift_reduce
+    let rr = report.reduce_reduce
+    return "" if (sr == expected && rr == 0)
+    let sr_part = sr != expected ? "expected {expected} shift/reduce conflicts, found {sr}" : ""
+    let sep = sr != expected && rr != 0 ? "; " : ""
+    let rr_part = rr != 0 ? "expected 0 reduce/reduce conflicts, found {rr}" : ""
+    let cells = format_report(report)
+    let listed = empty(cells) ? "" : ":\n{cells}"
+    return "[bison] {name}: {sr_part}{sep}{rr_part}{listed}"
 }

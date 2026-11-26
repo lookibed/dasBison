@@ -61,8 +61,11 @@ def main() {
   and named tokens as their `FlexToken` (`text(p.lexer, t)` is its text) - or none at all. A rule's
   type is what its actions return; a rule with no action passes its one value on; a rule whose
   actions return nothing yields no value. The root's value is the function's result.
-- A conflict precedence leaves to yacc's default is a compile warning in `bison -v` words, unless
-  `[bison(expected = N)]` (yacc's `%expect`) names the shift/reduce count.
+- A conflict precedence leaves to yacc's default is a compile warning in `bison -v` words - a style
+  warning in a module that requires `daslib/style_lint`, a log line otherwise.
+  `[bison(expected = N)]` is yacc's `%expect`: the grammar must have exactly `N` shift/reduce
+  conflicts and no reduce/reduce one, or the compile fails with bison's counts
+  (`expected 1 shift/reduce conflicts, found 2`) and the cells.
 - A refused token sets `p.failed`, `p.line`, `p.col` and `p.err`
   (`file:line:col: unexpected TOKEN, expected one of: a, b, c`) and the function returns the default
   value. Walk-through: `tutorials/01_calculator.das`.
@@ -89,7 +92,7 @@ expr : expr '+' expr          { $$ = $1 + $3 }
 ```
 
 - The header names the parser, its result type, the token enum and the lexer. Before `%rules`:
-  `%left` / `%right` / `%nonassoc`, `%expect N`, `%start NAME` (else the first rule is the root),
+  `%left` / `%right` / `%nonassoc`, `%expect N` (the annotation's `expected`), `%start NAME` (else the first rule is the root),
   `%type <Type> names`. The text ends at `%%`.
 - `$n` is the n-th symbol of the right-hand side, quoted characters counted; reading one that
   carries no value is a compile error. `$$ = value` returns the rule's value. The root's type is the
@@ -177,7 +180,7 @@ Install: `daspkg install github.com/lookibed/dasBison` (it brings dasFlex), then
 `require bison/bison_macro`, `require bison/lalr` or `require bison/bytes`. Run the tests from a
 daslang checkout:
 `daslang -load_module <dasBison> -load_module <dasFlex> dastest/dastest.das -- --test <dasBison>/tests`. Design and the
-rules a change must keep: `ARCHITECTURE.md`, `REVIEW.md`.
+rules a change must keep: `ARCHITECTURE.md`, `ARCHITECTURE_MACRO.md`, `REVIEW.md`.
 
 The C11 example (`examples/c11`, and `tests/c11_showcase_tests.das` through it) requires dasFlex's C
 lexer by a relative path, `../../../dasFlex/examples/c_lexer/c_lexer.das`: it assumes a dasFlex

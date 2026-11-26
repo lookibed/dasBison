@@ -7,6 +7,7 @@ require bison/grammar_text
 require bison/lalr
 require bison/prec
 require flex/flex_macro
+require daslib/debugger
 require daslib/strings_boost
 require math
 require _compile_issues
@@ -289,14 +290,15 @@ def test_dangling_else(t : T?) {
     t |> equal(g.err, "")
     let res <- resolve_precedence(build_lalr(g.builder, g.root), g.builder)
     t |> equal(res.report.shift_reduce, 1)
-    let warning = "[bison] ifs: 1 shift/reduce, 0 reduce/reduce conflicts, resolved by default:\nState 4 conflicts: 1 shift/reduce\n    ELSE  shift, and go to state 5\n    ELSE  [reduce using rule 1 (stmt ::= IF stmt)]\n"
-    t |> equal(conflict_warning("ifs", res.report, -1), warning)
-    t |> equal(conflict_warning("ifs", res.report, 1), "")
-    t |> equal(conflict_warning("ifs", res.report, 0),
-               replace(warning, "conflicts, resolved", "conflicts (expected = 0), resolved"))
+    let cells = "State 4 conflicts: 1 shift/reduce\n    ELSE  shift, and go to state 5\n    ELSE  [reduce using rule 1 (stmt ::= IF stmt)]\n"
+    t |> equal(conflict_warning("ifs", res.report),
+               "[bison] ifs: 1 shift/reduce, 0 reduce/reduce conflicts, resolved by default:\n{cells}")
+    t |> equal(conflict_mismatch("ifs", res.report, 1), "")
+    t |> equal(conflict_mismatch("ifs", res.report, 0),
+               "[bison] ifs: expected 0 shift/reduce conflicts, found 1:\n{cells}")
 }
 
-[test(description = "conflict_warning still warns when expected matches the shift/reduce count but a reduce/reduce conflict is left, and when it misses the count")]
+[test(description = "conflict_mismatch counts reduce/reduce conflicts apart, as bison does: expected matching the shift/reduce count still fails on a reduce/reduce one, and a missed count names both; conflict_warning names both counts")]
 def test_warning_reduce_reduce(t : T?) {
     let rules <- [TextRule(lhs = "s", rhs = "a Y"), TextRule(lhs = "s", rhs = "b Y"),
                   TextRule(lhs = "s", rhs = "X Y"), TextRule(lhs = "a", rhs = "X"),
@@ -307,11 +309,13 @@ def test_warning_reduce_reduce(t : T?) {
     let res <- resolve_precedence(build_lalr(g.builder, g.root), g.builder)
     t |> equal(res.report.shift_reduce, 1)
     t |> equal(res.report.reduce_reduce, 1)
-    let head = "[bison] mixed: 1 shift/reduce, 1 reduce/reduce conflicts"
-    t |> success(starts_with(conflict_warning("mixed", res.report, 1),
-                             "{head} (expected = 1), resolved by default:\nState "))
-    t |> success(starts_with(conflict_warning("mixed", res.report, -1), "{head}, resolved"))
-    t |> success(starts_with(conflict_warning("mixed", res.report, 2), "{head} (expected = 2)"))
+    let rr = "expected 0 reduce/reduce conflicts, found 1"
+    t |> success(starts_with(conflict_mismatch("mixed", res.report, 1),
+                             "[bison] mixed: {rr}:\nState "))
+    t |> success(starts_with(conflict_mismatch("mixed", res.report, 2),
+                             "[bison] mixed: expected 2 shift/reduce conflicts, found 1; {rr}:\nState "))
+    t |> success(starts_with(conflict_warning("mixed", res.report),
+                             "[bison] mixed: 1 shift/reduce, 1 reduce/reduce conflicts, resolved by default:\nState "))
 }
 
 [test(description = "a right-hand side reads names, quoted characters with escapes and a trailing %prec, and names what is wrong with a bad one")]
@@ -674,6 +678,128 @@ def test_expected_arg(t : T?) {
     }
     let zero = replace(tok_module(tok), "lexer = lx)", "lexer = lx, expected = 0)")
     t |> equal(compile_issues("expected0.das", zero), "")
+}
+
+//! a module with the dangling else, `[bison(tokens = Tok, lexer = lx{args})]` on line 19 and its
+//! function on line 20, after `line4` on line 4
+def private dangling_module(line4, args : string) : string {
+    return ("options gen2\nrequire flex/flex_macro\nrequire bison/bison_macro\n{line4}\n"
+        + "enum Tok \{\n    IF = 1\n    ELSE\n    X\n\}\n"
+        + "[flex]\ndef lx(var lx : FlexLexer) : bool \{\n    rule(\"if\") \{\n        lx |> emit(Tok.IF)\n    \}\n"
+        + "    rule(\"x\") \{\n        lx |> emit(Tok.X)\n    \}\n\}\n"
+        + "[bison(tokens = Tok, lexer = lx{args})]\ndef ifs(var p : Parser) : int \{\n"
+        + "    rule(\"s\", \"IF s\") <| $(i : FlexToken; s : int) => s\n"
+        + "    rule(\"s\", \"IF s ELSE s\") <| $(i : FlexToken; a : int; e : FlexToken; b : int) => a + b\n"
+        + "    rule(\"s\", \"X\") <| $(x : FlexToken) => 1\n\}\n")
+}
+
+[test(description = "expected = N that misses the grammar's conflicts fails the compile at the [bison] function with bison's counts, the reduce/reduce one apart, and the cells; expected = N that names them compiles clean")]
+def test_expected_mismatch(t : T?) {
+    t |> equal(compile_issues("expect1.das", dangling_module("", ", expected = 1")), "")
+    let cells = "State 4 conflicts: 1 shift/reduce\n    ELSE  shift, and go to state 5\n    ELSE  [reduce using rule 1 (s ::= IF s)]"
+    let zero = compile_issues("expect0.das", dangling_module("", ", expected = 0"))
+    t |> has_issue(zero, "[bison] ifs: expected 0 shift/reduce conflicts, found 1:\n{cells}")
+    t |> has_issue(zero, "expect0.das:20:")
+    let two = compile_issues("expect2.das", dangling_module("", ", expected = 2"))
+    t |> has_issue(two, "[bison] ifs: expected 2 shift/reduce conflicts, found 1:\n")
+    let tok = "enum Tok \{\n    NUM = 256\n\}\n"
+    let none = replace(tok_module(tok), "lexer = lx)", "lexer = lx, expected = 1)")
+    let clean = compile_issues("expect_none.das", none)
+    t |> has_issue(clean, "[bison] calc: expected 1 shift/reduce conflicts, found 0")
+    t |> success(find(clean, "found 0:") < 0, clean)
+    let rr = ("    rule(\"s\", \"a NUM\") <| $(a : int; n : FlexToken) => a\n"
+        + "    rule(\"s\", \"b NUM\") <| $(b : int; n : FlexToken) => b\n"
+        + "    rule(\"a\", \"NUM\") <| $(n : FlexToken) => 1\n"
+        + "    rule(\"b\", \"NUM\") <| $(n : FlexToken) => 2\n")
+    let rr_src = replace(bison_module(tok, rr), "lexer = lx)", "lexer = lx, expected = 0)")
+    t |> has_issue(compile_issues("expect_rr.das", rr_src),
+                   "[bison] calc: expected 0 reduce/reduce conflicts, found 1:\nState ")
+}
+
+//! the debug agent category `LogCapture` is installed under
+let private LOG_CAPTURE = "bison_macro_tests_log"
+
+//! the `[bison]` lines `to_log` wrote while the agent was installed, kept in the agent's context
+var private captured : array<string>
+
+//! keeps every `[bison]` log line, from any context, and holds it back from the output
+class private LogCapture : DapiDebugAgent {
+    def override onLog(context : Context?; at : LineInfo const?; level : int; text : string#) : bool {
+        return false if (find(text, "[bison]") < 0)
+        captured |> push(clone_string(text))
+        return true
+    }
+}
+
+//! the agent context's setup: `fork_debug_agent_context` runs it there
+def setup_log_capture(_ctx : Context) {
+    install_new_debug_agent(new LogCapture(), LOG_CAPTURE)
+}
+
+//! run in the agent's context: how many captured lines hold `needle`
+[export, pinvoke]
+def captured_hits(needle : string; var hits : int?) {
+    *hits = 0
+    for (line in captured) {
+        *hits += find(line, needle) >= 0 ? 1 : 0
+    }
+}
+
+//! how many `[bison]` log lines `blk`'s compiles wrote that hold `needle`
+def private logged_hits(needle : string; blk : block) : int {
+    fork_debug_agent_context(@@setup_log_capture)
+    invoke(blk)
+    var hits = 0
+    unsafe {
+        invoke_in_context(get_debug_agent_context(LOG_CAPTURE), "captured_hits", needle, addr(hits))
+    }
+    delete_debug_agent_context(LOG_CAPTURE)
+    return hits
+}
+
+//! `unroll` over a run-time range: only a lint runner's compile takes it, so a module that ends
+//! with it compiles clean only the way the runner compiles
+let private LINT_ONLY = "def spin(n : int) \{\n    unroll() $ \{\n        for (i in range(n)) \{\n            pass\n        \}\n    \}\n\}\n"
+
+[test(description = "a conflict left without expected is a warning the style lint's way: a module that requires daslib/style_lint gets it as a style warning at the [bison] function; a plain compile, a lint runner's compile and a module whose helper alone requires style_lint stay clean and log it")]
+def test_conflict_warning_paths(t : T?) {
+    let warning = "[bison] ifs: 1 shift/reduce, 0 reduce/reduce conflicts, resolved by default:\nState 4 conflicts: 1 shift/reduce\n"
+    let linted = compile_issues("warn_lint.das", dangling_module("require daslib/style_lint", ""))
+    t |> has_issue(linted, warning)
+    t |> has_issue(linted, "warn_lint.das:20:")
+    t |> has_issue(linted, "31209")
+    let none : array<VirtualFile>
+    let helper = [(name = "warn_helper.das",
+                   text = "options gen2\nmodule warn_helper public\nrequire daslib/style_lint\ndef helper_one() : int => 1\n")]
+    for (f in ["warn_plain.das", "warn_runner.das", "warn_private.das"]) {
+        var issues = ""
+        let hits = logged_hits("{f}:20: {warning}") $ {
+            if (f == "warn_plain.das") {
+                issues = compile_issues(f, dangling_module("", ""))
+            } elif (f == "warn_runner.das") {
+                issues = compile_issues(f, dangling_module("require daslib/unroll", "") + LINT_ONLY, none, true)
+            } else {
+                issues = compile_issues(f, dangling_module("require warn_helper", ""), helper)
+            }
+        }
+        t |> equal(issues, "")
+        t |> equal(hits, 1)
+    }
+}
+
+[test(description = "a grammar with no shift/reduce conflict and one reduce/reduce conflict, left without expected, still warns: the log line names both counts")]
+def test_conflict_warning_reduce_reduce_only(t : T?) {
+    let body = ("    rule(\"A\", \"B\") <| $(b : int) => b\n"
+        + "    rule(\"S\", \"B\") <| $(b : int) => b\n"
+        + "    rule(\"B\", \"A\")\n"
+        + "    rule(\"B\", \"NUM\") <| $(n : FlexToken) => 1\n"
+        + "    root(\"S\")\n")
+    var issues = ""
+    let hits = logged_hits("warn_rr.das:14: [bison] calc: 0 shift/reduce, 1 reduce/reduce conflicts, resolved by default:\nState ") $ {
+        issues = compile_issues("warn_rr.das", grammar_module(body))
+    }
+    t |> equal(issues, "")
+    t |> equal(hits, 1)
 }
 
 //! the enum `tok_module`'s grammar reads `NUM` from
