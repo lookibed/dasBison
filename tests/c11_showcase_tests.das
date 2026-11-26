@@ -5,6 +5,7 @@ require dastest/testing_boost public
 require daslib/fio
 require daslib/module_path
 require ../examples/c11/c11_parser.das
+require ../examples/c11/parse_c11.das
 
 //! the tokens a declaration can start with: what an identifier that is no typedef name meets
 let private DECLARATION_START = "ATOMIC, TYPEDEF, EXTERN, STATIC, THREAD_LOCAL, AUTO, REGISTER, VOID, CHAR, SHORT, INT, LONG, FLOAT, DOUBLE, SIGNED, UNSIGNED, BOOL, COMPLEX, IMAGINARY, TYPEDEF_NAME, STRUCT, UNION, ENUM, CONST, RESTRICT, VOLATILE, INLINE, NORETURN, ALIGNAS, STATIC_ASSERT"
@@ -88,4 +89,31 @@ def test_qsort_file(t : T?) {
     t |> success(r.accepted, r.err)
     t |> equal(r.typedefs, 1)
     t |> equal(c11_token_count(src), 284)
+}
+
+[test(description = "parse_c11 --time N: a count below 1 is refused with the usage text, N passes are timed each, the median is the middle of the sorted passes, and the accepted line ends with it")]
+def test_time_passes(t : T?) {
+    for (bad in ["0", "-1", "x"]) {
+        let args <- parse_c11_args(["daslang", "parse_c11.das", "--", "--time", bad, "a.i"])
+        t |> equal(args.err, "--time takes a pass count of 1 or more")
+    }
+    let timed <- parse_c11_args(["daslang", "parse_c11.das", "--", "--time", "3", "a.i", "b.i"])
+    t |> equal(timed.err, "")
+    t |> equal(timed.passes, 3)
+    t |> equal(timed.files, ["a.i", "b.i"])
+    let plain <- parse_c11_args(["daslang", "parse_c11.das", "--", "a.i"])
+    t |> equal(plain.passes, 0)
+    t |> equal(plain.files, ["a.i"])
+    let src = fread(path_join(get_this_module_dir(), "data/qsort_cmp.i"))
+    var times <- timed_passes(src, "qsort_cmp.i", 3)
+    t |> equal(length(times), 3)
+    for (ms in times) {
+        t |> success(ms > 0.0lf, "a pass of {ms} ms")
+    }
+    var odd <- [5.0lf, 1.0lf, 3.0lf]
+    t |> equal(median_ms(odd), 3.0lf)
+    var even <- [4.0lf, 1.0lf, 3.0lf, 2.0lf]
+    t |> equal(median_ms(even), 3.0lf)
+    t |> equal(accepted_line("q.i", 284, 1, 0.8644lf, 3), "q.i: accepted, 284 tokens, 1 typedefs, median 0.864 ms of 3")
+    t |> equal(accepted_line("q.i", 284, 1, 0.0lf, 0), "q.i: accepted, 284 tokens, 1 typedefs")
 }

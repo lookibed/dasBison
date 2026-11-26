@@ -6,7 +6,8 @@ errors - and the `%bison~` reader, its text front end.
 
 ## The `[bison]` macro {#macro}
 
-`[bison(tokens = Enum, lexer = scan)]` on `def name(var p : Parser) : T` reads the body as a
+`[bison(tokens = Enum, lexer = scan)]` on `def name(var p : Parser) : T` - or a parser struct of
+another lexer (`#lexer-contract`) - reads the body as a
 grammar when the module compiles. The body holds calls only: `rule("lhs", "rhs")`, with or without
 an action block, `prec_left` / `prec_right` / `prec_nonassoc("tok", ...)`, and one `root("rule")`, its
 argument a literal (the first rule's left-hand side when absent, as in yacc). A right-hand side is text: an identifier
@@ -16,9 +17,8 @@ byte, an empty string is the epsilon production, and a trailing `%prec NAME` giv
 the level of `NAME`. A precedence argument is a token name, a quoted character or a bare
 punctuation character, which names the token a right-hand side writes quoted (`\` is `'\\'`);
 a name neither a token nor a quoted character is a pseudo-terminal no kind reaches (yacc's
-`%prec UMINUS`). `scan` is the `[flex]` function the parser pulls tokens
-from: one token per call, `p.lexer.tok.kind` its kind, `false` at the end of input or on a lexer
-error. `Enum` is the enum the module sees by that name: its own, else the one a module it requires -
+`%prec UMINUS`). `scan` is the function the parser pulls tokens from: one token per call,
+`p.lexer.tok.kind` its kind, `false` at the end of input or on a lexer error. `Enum` is the enum the module sees by that name: its own, else the one a module it requires -
 directly or through a public require - declares; two such modules are an ambiguity, and an enum
 only some other loaded module declares is unknown. The enum is read from the AST at parse time, so a member's value is an integer literal of any
 width or sign (a typed enum's `200u8` included), `-` before one, or the previous member's plus
@@ -29,9 +29,36 @@ construction. A terminal is keyed by its kind: two names for one kind are an err
 member cannot alias a quoted byte. The kind map the driver reads is an array indexed by kind,
 which bounds kinds to `0 .. 65535`.
 
+## The lexer contract {#lexer-contract}
+
+The generated driver reads the lexer by field name, not by type: the macro emits the driver per
+function, and inference types each read against the parser struct that function takes - `Parser`
+for a dasFlex lexer, or any struct with `ParserStatus`'s fields (`failed`, `err`, `line`, `col`)
+and a `lexer`, the status fields typed as `ParserStatus` types them (`failed : bool`, `err :
+string`, `line`, `col : int`). `scan(var lexer) : bool` returns `true` with the token in
+`lexer.tok`, or `false` at the end of input or, with `lexer.failed : bool` set, on an error the
+lexer words in `lexer.err : string` at `lexer.line` / `lexer.col : int`; `lexer.file : string`
+names the input, `""` none. Of a token the driver reads `kind : int`, `line` and `col : int`, and
+it keeps the token whole on `array<typedecl(p.lexer.tok)>`, so a token with more fields (a
+pp-token's `has_space`, `at_bol`, `sym`) or other ones (a hand-written lexer's value) reaches an
+action as it was scanned, typed as the action's argument. A token is a plain value: the driver
+copies every token it shifts onto that stack, so a token carrying an array would allocate per
+shift. The macro reads the parser struct, its `lexer` and its token from the AST before inference
+and fails the compile at the function when a field of the token does not copy or `kind` is not an
+`int`, naming the field; a type declared after the function is not resolved there and goes to
+inference unchecked, which reports the builtin error at the driver.
+The `%bison~` reader writes `var p : Parser` (`#reader`), so another lexer drives a grammar
+through `[bison]` only. The two helpers that read the
+parser, `bison_lexer_failed` and `bison_syntax_error`, are generic in it. There is no interface
+class: one would put a virtual call per token on the driver's path and a conversion of every token
+into the interface's type. For `Parser` the driver compiles to the interpreter nodes the
+`FlexLexer`-typed driver did - the same node per statement, the two error helpers called as their
+generic instances, whose bodies are the old ones node for node. `parser_open` and `text(lx, t)`
+are the dasFlex lexer's; another lexer opens itself and reads its own text.
+
 ## Values {#values}
 
-Every symbol on the parse stack has a value or none. A named token's value is its `FlexToken`; a
+Every symbol on the parse stack has a value or none. A named token's value is its token, as the lexer scanned it; a
 quoted character has none. A rule yields a value when an action of it returns one (a declared
 result type other than `void`, or a `return` with a value in the block, not counting the blocks
 nested in it); its type is the result type of the first such action. Every action of a rule
@@ -49,7 +76,7 @@ the argument lints skip them, while the body is linted as the user wrote it. The
 in that function, so `p` - the parser function's parameter, under its own name - is in scope and
 nothing else of the parser is.
 
-The value stack is one `array<T>` per rule that yields, plus `array<FlexToken>` for the tokens
+The value stack is one `array<T>` per rule that yields, plus `array<typedecl(p.lexer.tok)>` for the tokens
 and `array<int>` for the states. `apply` runs before type inference, when no action's result type
 is known, so the macro cannot write a `variant` of the value types; it declares each rule's stack
 as `array<typedecl(<first action>(p, default<args>...)) -const>`, which inference resolves. A stack

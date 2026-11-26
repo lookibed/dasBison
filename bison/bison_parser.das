@@ -11,13 +11,17 @@ require daslib/strings_boost
 // What a `[bison]` parser runs on: the `Parser` it takes, and the helpers its generated driver
 // calls - the value stack's pop, the token kind's terminal, the expected set, the error text.
 
-//! The parser's state: the lexer it reads tokens from, and where and why it failed.
-struct Parser {
-    lexer : FlexLexer
+//! Where and why a parse failed: the fields every parser struct holds beside its `lexer`.
+struct ParserStatus {
     failed : bool
     err : string            //!< `file:line:col: unexpected TOKEN, expected one of: a, b`
     line : int              //!< where the refused token starts; the lexer's position at the end
     col : int
+}
+
+//! The parser over a dasFlex lexer.
+struct Parser : ParserStatus {
+    lexer : FlexLexer
 }
 
 //! Open `src` for parsing: the lexer over it, no error.
@@ -62,8 +66,8 @@ def bison_keep_popped(states : array<int>; var low : int&; var saved : array<int
     lr_keep_popped(states, low, saved, depth)
 }
 
-//! The lexer refused a byte: its error is the parser's.
-def bison_lexer_failed(var p : Parser) {
+//! The lexer refused its input: its error is the parser's.
+def bison_lexer_failed(var p : auto) {
     p.failed = true
     p.err = p.lexer.err
     p.line = p.lexer.line
@@ -72,7 +76,7 @@ def bison_lexer_failed(var p : Parser) {
 
 //! The parser refused terminal `term` (`eof` at the end of input, -2 for a kind the grammar does
 //! not know): `file:line:col: unexpected TOKEN, expected one of: a, b, c`.
-def bison_syntax_error(var p : Parser; names : array<string>; term, eof : int;
+def bison_syntax_error(var p : auto; names : array<string>; term, eof : int;
                        expected : array<int>) {
     p.failed = true
     let at_end = term == eof

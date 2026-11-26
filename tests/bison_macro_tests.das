@@ -179,6 +179,194 @@ def ifs(var p : Parser) : string {
     rule("stmt", "X") <| $() => "x"
 }
 
+//! a hand-written lexer's token: the fields the generated driver reads, `kind`, `line`, `col`, and a
+//! value of its own
+struct HandToken {
+    kind : int
+    line : int
+    col : int
+    value : int
+}
+
+//! a hand-written lexer, no dasFlex in it: the fields the generated driver reads, by name
+struct HandLexer {
+    src : array<int>                //!< the input's characters
+    pos : int
+    line : int
+    col : int
+    tok : HandToken
+    failed : bool
+    err : string
+    file : string
+}
+
+struct HandParser : ParserStatus {
+    lexer : HandLexer
+}
+
+enum HTok {
+    NUM = 256
+}
+
+//! one token per call: a number with its value, or one of `+ * ( )`; `false` at the end, and on
+//! any other byte with `failed` set
+def hand_scan(var lx : HandLexer) : bool {
+    while (lx.pos < length(lx.src) && lx.src[lx.pos] == ' ') {
+        lx.pos++
+        lx.col++
+    }
+    return false if (lx.pos >= length(lx.src))
+    let c = lx.src[lx.pos]
+    lx.tok = HandToken(kind = c, line = lx.line, col = lx.col)
+    if (is_number(c)) {
+        lx.tok.kind = int(HTok.NUM)
+        while (lx.pos < length(lx.src) && is_number(lx.src[lx.pos])) {
+            lx.tok.value = lx.tok.value * 10 + lx.src[lx.pos] - '0'
+            lx.pos++
+            lx.col++
+        }
+        return true
+    }
+    if (c != '+' && c != '*' && c != '(' && c != ')') {
+        lx.failed = true
+        lx.err = "{lx.line}:{lx.col}: no token starts with '{to_char(c)}'"
+        return false
+    }
+    lx.pos++
+    lx.col++
+    return true
+}
+
+def hand_open(var p : HandParser; src : string) {
+    p.lexer <- HandLexer(src <- [for (c in src); c], line = 1, col = 1, file = "hand.txt")
+    p.failed = false
+}
+
+[bison(tokens = HTok, lexer = hand_scan)]
+def hand_calc(var p : HandParser) : int {
+    prec_left("+")
+    prec_left("*")
+    rule("e", "e '+' e") <| $(a, b : int) => a + b
+    rule("e", "e '*' e") <| $(a, b : int) => a * b
+    rule("e", "'(' e ')'")
+    rule("e", "NUM") <| $(t : HandToken) => t.value
+}
+
+[test(description = "a hand-written lexer struct whose token has the driver's field names drives a [bison] grammar: its token type is the action's argument, and a refused token and the lexer's own error report as with dasFlex")]
+def test_hand_lexer(t : T?) {
+    var p : HandParser
+    hand_open(p, "2 + 3 * (4 + 10)")
+    t |> equal(hand_calc(p), 44)
+    t |> success(!p.failed, p.err)
+    hand_open(p, "2 +")
+    t |> equal(hand_calc(p), 0)
+    t |> equal(p.err, "hand.txt:1:4: unexpected end of input, expected one of: '(', NUM")
+    hand_open(p, "2 3")
+    hand_calc(p)
+    t |> equal(p.err, "hand.txt:1:3: unexpected NUM, expected one of: '+', '*', end of input")
+    hand_open(p, "2 + x")
+    hand_calc(p)
+    t |> equal(p.err, "1:5: no token starts with 'x'")
+    t |> equal(p.line, 1)
+    t |> equal(p.col, 5)
+}
+
+//! a module whose `[bison]` parser reads a hand-written lexer, its token `Token` holding `fields`
+//! besides `line` and `col`
+def private hand_module(fields : string) : string {
+    return ("options gen2\nrequire bison/bison_macro\nenum Tok \{\n    NUM = 256\n\}\n"
+        + "struct Token \{\n{fields}    line : int\n    col : int\n\}\n"
+        + "struct Lexer \{\n    tok : Token\n    failed : bool\n    err : string\n    line : int\n"
+        + "    col : int\n    file : string\n\}\n"
+        + "struct HandParser : ParserStatus \{\n    lexer : Lexer\n\}\n"
+        + "def scan(var lx : Lexer) : bool \{\n    return false\n\}\n"
+        + "[bison(tokens = Tok, lexer = scan)]\ndef calc(var p : HandParser) : int \{\n"
+        + "    rule(\"e\", \"NUM\") <| $(n : Token) => 1\n\}\n")
+}
+
+[test(description = "the lexer's token is a plain value: a token with an array field, or with a kind that is not an int, fails the compile at the [bison] function with the field named; a string field copies")]
+def test_token_contract(t : T?) {
+    let array_field = hand_module("    kind : int\n    payload : array<int>\n")
+    let payload = compile_issues("tok_array.das", array_field)
+    t |> has_issue(payload, "[bison] calc: the lexer's token type Token is not copyable (field payload); a token must be a plain value - keep arrays out of it")
+    t |> has_issue(payload, "tok_array.das:")
+    t |> success(find(payload, "can't push value") < 0, payload)
+    let enum_kind = compile_issues("tok_enum.das", hand_module("    kind : Tok\n"))
+    t |> has_issue(enum_kind, "[bison] calc: the lexer's token type Token has kind : Tok; the driver reads tok.kind as an int")
+    t |> success(find(enum_kind, "30341") < 0, enum_kind)
+    let string_field = hand_module("    kind : int\n    text : string\n")
+    t |> equal(compile_issues("tok_string.das", string_field), "")
+}
+
+enum LateTok {
+    NUM = 256
+}
+
+//! the parser, its lexer and its token are declared after this function: the macro sees them
+//! unresolved, so the token contract goes unchecked and the driver compiles in inference
+[bison(tokens = LateTok, lexer = late_scan)]
+def late_sum(var p : LateParser) : int {
+    rule("s", "NUM") <| $(t : LateToken) => t.value
+    rule("s", "s NUM") <| $(a : int; t : LateToken) => a + t.value
+}
+
+struct LateToken {
+    kind : int
+    line : int
+    col : int
+    value : int
+}
+
+struct LateLexer {
+    src : array<int>
+    pos : int
+    line : int
+    col : int
+    tok : LateToken
+    failed : bool
+    err : string
+    file : string
+}
+
+struct LateParser : ParserStatus {
+    lexer : LateLexer
+}
+
+//! one number per call, spaces between; `false` at the end
+def late_scan(var lx : LateLexer) : bool {
+    while (lx.pos < length(lx.src) && lx.src[lx.pos] == ' ') {
+        lx.pos++
+        lx.col++
+    }
+    return false if (lx.pos >= length(lx.src))
+    lx.tok = LateToken(kind = int(LateTok.NUM), line = lx.line, col = lx.col)
+    while (lx.pos < length(lx.src) && is_number(lx.src[lx.pos])) {
+        lx.tok.value = lx.tok.value * 10 + lx.src[lx.pos] - '0'
+        lx.pos++
+        lx.col++
+    }
+    return true
+}
+
+[test(description = "a parser, lexer and token declared after the [bison] function compile and parse, the token contract left unchecked; the array-token variant declared after fails in inference with the builtin copy error")]
+def test_declared_after(t : T?) {
+    var p : LateParser
+    p.lexer <- LateLexer(src <- [for (c in "1 20 300"); c], line = 1, col = 1)
+    t |> equal(late_sum(p), 321)
+    t |> success(!p.failed, p.err)
+    let late = ("options gen2\nrequire bison/bison_macro\nenum Tok \{\n    NUM = 256\n\}\n"
+        + "[bison(tokens = Tok, lexer = scan)]\ndef calc(var p : HandParser) : int \{\n"
+        + "    rule(\"e\", \"NUM\") <| $(n : Token) => 1\n\}\n"
+        + "struct Token \{\n    kind : int\n    payload : array<int>\n    line : int\n    col : int\n\}\n"
+        + "struct Lexer \{\n    tok : Token\n    failed : bool\n    err : string\n    line : int\n"
+        + "    col : int\n    file : string\n\}\n"
+        + "struct HandParser : ParserStatus \{\n    lexer : Lexer\n\}\n"
+        + "def scan(var lx : Lexer) : bool \{\n    return false\n\}\n")
+    let issues = compile_issues("tok_late.das", late)
+    t |> has_issue(issues, "error[31400]: can't push value, which can't be copied")
+    t |> success(find(issues, "is not copyable") < 0, issues)
+}
+
 enum MTok {
     A = 1
     B
@@ -894,5 +1082,5 @@ def test_macro_errors(t : T?) {
                    "[bison] takes one argument: var p : Parser")
     let no_lexer = replace(grammar_module(NUM_RULE), "lexer = lx)", "expected = 0)")
     t |> has_issue(compile_issues("no_lexer.das", no_lexer),
-                   "[bison] needs tokens = <the token enum> and lexer = <the [flex] function>")
+                   "[bison] needs tokens = <the token enum> and lexer = <the scan function>")
 }

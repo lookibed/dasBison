@@ -17,9 +17,10 @@ require bison/grammar_text
 require bison/bison_parser public
 require bison/bison_reader public
 
-// `[bison(tokens = Enum, lexer = scan)]` on `def name(var p : Parser) : T { rule(...) ... }` reads
-// the grammar at compile time, builds and resolves its LALR(1) tables, stores them as private
-// module globals, turns every action into a private function and rewrites the body into the driver.
+// `[bison(tokens = Enum, lexer = scan)]` on `def name(var p : Parser) : T { rule(...) ... }` - or a
+// parser struct of another lexer with the same field names - reads the grammar at compile time,
+// builds and resolves its LALR(1) tables, stores them as private module globals, turns every
+// action into a private function and rewrites the body into the driver.
 
 //! One `rule(...)` call: its text, its action block (null for none) and what the action yields.
 struct private BisonRule {
@@ -460,7 +461,7 @@ def private make_driver(spec : BisonSpec; g : TextGrammar; t : LalrTables; vals 
     var head <- qmacro_block_to_array() {
         var bison`none : $t(rtype)
         var bison`states : array<int>
-        var bison`toks : array<FlexToken>
+        var bison`toks : array<typedecl($i(p).lexer.tok) -const -&>
         var bison`saved : array<int>
     }
     var run <- qmacro_block_to_array() {
@@ -540,7 +541,7 @@ def private bison_args(args : AnnotationArgumentList) : BisonArgs {
     let expected_arg = find_arg(args, "expected")
     ba.expected = expected_arg is tInt ? expected_arg as tInt : -1
     if (empty(ba.tokens) || empty(ba.lexer)) {
-        ba.err = "[bison] needs tokens = <the token enum> and lexer = <the [flex] function>"
+        ba.err = "[bison] needs tokens = <the token enum> and lexer = <the scan function>"
     } elif (!(expected_arg is nothing) && ba.expected < 0) {
         ba.err = "[bison] expected = N takes the number of shift/reduce conflicts, an int of 0 or more"
     }
@@ -714,6 +715,33 @@ def private add_tables(spec : BisonSpec; g : TextGrammar; t : LalrTables; at : L
         && table_global("{f}`bison`len", cols.len, at, errors))
 }
 
+//! the structure `t` names, null for any other type and for a name the parse left unresolved
+def private struct_of(t : TypeDeclPtr) : Structure const? =>
+    t != null && t.baseType == Type.tStructure ? t.structType : null
+
+//! the lexer's token, as far as the parser struct of `func` resolves before inference: `kind` is
+//! an `int` and every field copies, since the driver keeps each shifted token on a stack
+[arch(at="../ARCHITECTURE_MACRO.md#lexer-contract")]
+def private check_token(func : FunctionPtr; var errors : das_string) : bool {
+    let parser = struct_of(func.arguments[0]._type)
+    let lexer = parser != null ? find_structure_field(parser, "lexer") : null
+    let lexer_st = lexer != null ? struct_of(lexer._type) : null
+    let tok = lexer_st != null ? find_structure_field(lexer_st, "tok") : null
+    let tok_st = tok != null ? struct_of(tok._type) : null
+    return true if (tok_st == null)
+    let name = "[bison] {func.name}: the lexer's token type {tok_st.name}"
+    let kind = find_structure_field(tok_st, "kind")
+    if (kind != null && kind._type.baseType != Type.tInt && kind._type.baseType != Type.alias) {
+        return fail_line("{name} has kind : {describe(kind._type)}; the driver reads tok.kind as an int", func.at, errors)
+    }
+    for (f in tok_st.fields) {
+        if (f._type.baseType != Type.alias && !f._type.canCopy) {
+            return fail_line("{name} is not copyable (field {f.name}); a token must be a plain value - keep arrays out of it", func.at, errors)
+        }
+    }
+    return true
+}
+
 [function_macro(name="bison")]
 class BisonMacro : AstFunctionAnnotation {
     def override apply(var func : FunctionPtr; var group : ModuleGroup;
@@ -728,6 +756,7 @@ class BisonMacro : AstFunctionAnnotation {
             errors := ba.err
             return false
         }
+        return false if (!check_token(func, errors))
         let lexer = ba.lexer
         let tk = enum_kinds(ba.tokens)
         if (!empty(tk.err)) {

@@ -3,7 +3,7 @@
 This document follows `ARCHITECTURE_COMMON.md` (a copy sits at this package's root). dasBison is a
 pure daslang parser generator: LALR(1) tables over integer terminals, a byte-class front end on top
 of them, a deterministic driver, and the `[bison]` macro, which builds the tables at compile time
-and generates a typed parser over a dasFlex lexer, and the `%bison~` reader, its yacc-like text form.
+and generates a typed parser over a dasFlex lexer or any lexer with its field names, and the `%bison~` reader, its yacc-like text form.
 The core (`lalr`, `prec`, `bytes`,
 `grammar_text`) depends on `daslib/` alone; `bison_parser` and `bison_macro` also depend on
 dasFlex's runtime module `flex/flex`, the only package dasBison requires.
@@ -28,8 +28,8 @@ dasFlex's runtime module `flex/flex`, the only package dasBison requires.
   the token kind of every terminal), `conflict_warning` and `conflict_mismatch`, and the lexing both text front ends share
   (`quoted_char`, `is_name_start`, `is_name_char`), so a quoted character or a name reads the same
   in a right-hand side and in `%bison~` text. Emits no code.
-- `bison/bison_parser.das` - what a generated parser runs on: `Parser`, `parser_open`,
-  `text(lx, token)`, and the helpers the driver calls (`bison_pop`, `bison_terminal`,
+- `bison/bison_parser.das` - what a generated parser runs on: `ParserStatus`, `Parser` (the
+  dasFlex parser), `parser_open`, `text(lx, token)`, and the helpers the driver calls (`bison_pop`, `bison_terminal`,
   `bison_keep_popped`, `bison_expected`, `bison_syntax_error`, `bison_lexer_failed`). Builds no
   tables.
 - `bison/bison_macro.das` - the `[bison]` function annotation: reads the body's calls, builds and

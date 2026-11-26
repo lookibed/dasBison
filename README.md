@@ -3,7 +3,7 @@
 A parser generator for [daslang](https://daslang.io/): LALR(1) tables over integer terminal ids, a
 byte-class front end over the same core, a deterministic driver, and a `[bison]` macro that builds
 the tables when the module compiles and turns a function into a typed parser over a
-[dasFlex](https://github.com/lookibed/dasFlex) lexer.
+[dasFlex](https://github.com/lookibed/dasFlex) lexer, or any lexer with the same field names.
 
 ```das
 options gen2
@@ -58,9 +58,9 @@ def main() {
   `prec_left` / `prec_right` / `prec_nonassoc` take token names or characters; `root` defaults to
   the first rule.
 - The action's arguments are the values of the symbols that carry one, in order - rules that yield,
-  and named tokens as their `FlexToken` (`text(p.lexer, t)` is its text) - or none at all. A rule's
-  type is what its actions return; a rule with no action passes its one value on; a rule whose
-  actions return nothing yields no value. The root's value is the function's result.
+  and named tokens as their token, a `FlexToken` (`text(p.lexer, t)` is its text) - or none at
+  all. A rule's type is what its actions return; a rule with no action passes its one value on; a
+  rule whose actions return nothing yields no value. The root's value is the function's result.
 - A conflict precedence leaves to yacc's default is a compile warning in `bison -v` words - a style
   warning in a module that requires `daslib/style_lint`, a log line otherwise.
   `[bison(expected = N)]` is yacc's `%expect`: the grammar must have exactly `N` shift/reduce
@@ -69,6 +69,15 @@ def main() {
 - A refused token sets `p.failed`, `p.line`, `p.col` and `p.err`
   (`file:line:col: unexpected TOKEN, expected one of: a, b, c`) and the function returns the default
   value. Walk-through: `tutorials/01_calculator.das`.
+- Another lexer plugs in by field names, its tokens unconverted: the function takes any struct
+  with `ParserStatus`'s fields (`failed : bool`, `err : string`, `line`, `col : int`) and a `lexer`
+  that `lexer = scan` advances - `scan(var lx) : bool`, the token in `lx.tok` (`kind : int`,
+  `line`, `col : int`, and any fields of its own), `lx.failed : bool`, `lx.err : string`,
+  `lx.line`, `lx.col : int` and `lx.file : string` for an error. The token is a plain value - the
+  driver copies each one it shifts, so an array field is a compile error, as is a `kind` of an
+  enum type. An action takes the token as that type: `struct MyParser : ParserStatus { lexer :
+  MyLexer }`, then `rule("e", "NUM") <| $(t : MyToken) => t.value`. `%bison~` still writes
+  `var p : Parser`, so another lexer goes through `[bison]` only.
 
 The calculator as yacc-like text, with a unary minus - `%bison~` at module level writes a `[bison]`
 function like the one above:
