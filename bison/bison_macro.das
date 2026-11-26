@@ -619,15 +619,58 @@ def private integer_literal(e : Expression const?) : tuple<ok : bool; value : in
     return (ok = false, value = 0l)
 }
 
-//! a failure that belongs to one call is reported at its line; the annotation fails with a pointer to it
+//! a failure that belongs to one line is reported at it; the annotation fails with a pointer to it
+def private fail_line(msg : string; at : LineInfo; var errors : das_string) : bool {
+    compiling_program() |> macro_error(at, msg)
+    errors := "line {int(at.line)}: {msg}"
+    return false
+}
+
+//! a failure that belongs to one call is reported at its line
 def private fail_rule(msg : string; site : Expression const?; var errors : das_string) : bool {
     if (site == null) {
         errors := msg
         return false
     }
-    compiling_program() |> macro_error(site.at, msg)
-    errors := "line {int(site.at.line)}: {msg}"
-    return false
+    return fail_line(msg, site.at, errors)
+}
+
+//! whether the compiling module arms the style lint: it sees `daslib/style_lint`, whose lint macro
+//! then reports into the compile
+def private style_lint_armed() : bool {
+    let here = compiling_module()
+    var armed = false
+    for_each_module(get_ptr(compiling_program())) $(m) {
+        if (m.name == "style_lint" && is_visible_directly(here, m)) {
+            armed = true
+        }
+    }
+    return armed
+}
+
+//! a compile warning at `at`, the way the style lint's are given: into the compile when the style
+//! lint is armed (`macro_style_warning`), to the log otherwise
+[arch(at="../ARCHITECTURE.md#compile-time-tables")]
+def private bison_warning(msg : string; at : LineInfo) {
+    if (style_lint_armed()) {
+        compiling_program() |> macro_style_warning(at, msg)
+    } else {
+        to_log(LOG_WARNING, "{at.fileInfo.name}:{int(at.line)}: {msg}")
+    }
+}
+
+//! the conflicts precedence left to yacc's default: an error at the function when `expected` (-1
+//! when absent) misses them, a warning when there is no `expected`
+def private check_conflicts(name : string; report : PrecReport; expected : int; at : LineInfo;
+                            var errors : das_string) : bool {
+    if (expected >= 0) {
+        let mismatch = conflict_mismatch(name, report, expected)
+        return fail_line(mismatch, at, errors) if (!empty(mismatch))
+    } else {
+        let warning = conflict_warning(name, report)
+        bison_warning(warning, at) if (!empty(warning))
+    }
+    return true
 }
 
 //! the largest token kind a grammar may use: the kind map is an array indexed by kind
@@ -686,7 +729,6 @@ class BisonMacro : AstFunctionAnnotation {
             return false
         }
         let lexer = ba.lexer
-        let expected = ba.expected
         let tk = enum_kinds(ba.tokens)
         if (!empty(tk.err)) {
             errors := tk.err
@@ -710,10 +752,7 @@ class BisonMacro : AstFunctionAnnotation {
                              errors)
         }
         let res <- resolve_precedence(built, g.builder)
-        let warning = conflict_warning(spec.func_name, res.report, expected)
-        if (!empty(warning)) {
-            to_log(LOG_WARNING, "{func.at.fileInfo.name}:{int(func.at.line)}: {warning}")
-        }
+        return false if (!check_conflicts(spec.func_name, res.report, ba.expected, func.at, errors))
         let vals <- plan_values(spec, g)
         return fail_rule(spec.err, spec.err_site, errors) if (!empty(spec.err))
         if (!vals.rule_yields[g.root]) {
