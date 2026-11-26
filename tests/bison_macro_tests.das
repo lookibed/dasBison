@@ -298,6 +298,75 @@ def test_token_contract(t : T?) {
     t |> equal(compile_issues("tok_string.das", string_field), "")
 }
 
+enum LateTok {
+    NUM = 256
+}
+
+//! the parser, its lexer and its token are declared after this function: the macro sees them
+//! unresolved, so the token contract goes unchecked and the driver compiles in inference
+[bison(tokens = LateTok, lexer = late_scan)]
+def late_sum(var p : LateParser) : int {
+    rule("s", "NUM") <| $(t : LateToken) => t.value
+    rule("s", "s NUM") <| $(a : int; t : LateToken) => a + t.value
+}
+
+struct LateToken {
+    kind : int
+    line : int
+    col : int
+    value : int
+}
+
+struct LateLexer {
+    src : array<int>
+    pos : int
+    line : int
+    col : int
+    tok : LateToken
+    failed : bool
+    err : string
+    file : string
+}
+
+struct LateParser : ParserStatus {
+    lexer : LateLexer
+}
+
+//! one number per call, spaces between; `false` at the end
+def late_scan(var lx : LateLexer) : bool {
+    while (lx.pos < length(lx.src) && lx.src[lx.pos] == ' ') {
+        lx.pos++
+        lx.col++
+    }
+    return false if (lx.pos >= length(lx.src))
+    lx.tok = LateToken(kind = int(LateTok.NUM), line = lx.line, col = lx.col)
+    while (lx.pos < length(lx.src) && is_number(lx.src[lx.pos])) {
+        lx.tok.value = lx.tok.value * 10 + lx.src[lx.pos] - '0'
+        lx.pos++
+        lx.col++
+    }
+    return true
+}
+
+[test(description = "a parser, lexer and token declared after the [bison] function compile and parse, the token contract left unchecked; the array-token variant declared after fails in inference with the builtin copy error")]
+def test_declared_after(t : T?) {
+    var p : LateParser
+    p.lexer <- LateLexer(src <- [for (c in "1 20 300"); c], line = 1, col = 1)
+    t |> equal(late_sum(p), 321)
+    t |> success(!p.failed, p.err)
+    let late = ("options gen2\nrequire bison/bison_macro\nenum Tok \{\n    NUM = 256\n\}\n"
+        + "[bison(tokens = Tok, lexer = scan)]\ndef calc(var p : HandParser) : int \{\n"
+        + "    rule(\"e\", \"NUM\") <| $(n : Token) => 1\n\}\n"
+        + "struct Token \{\n    kind : int\n    payload : array<int>\n    line : int\n    col : int\n\}\n"
+        + "struct Lexer \{\n    tok : Token\n    failed : bool\n    err : string\n    line : int\n"
+        + "    col : int\n    file : string\n\}\n"
+        + "struct HandParser : ParserStatus \{\n    lexer : Lexer\n\}\n"
+        + "def scan(var lx : Lexer) : bool \{\n    return false\n\}\n")
+    let issues = compile_issues("tok_late.das", late)
+    t |> has_issue(issues, "error[31400]: can't push value, which can't be copied")
+    t |> success(find(issues, "is not copyable") < 0, issues)
+}
+
 enum MTok {
     A = 1
     B
