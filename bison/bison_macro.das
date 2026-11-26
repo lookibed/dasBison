@@ -441,7 +441,7 @@ def private make_arm(spec : BisonSpec; g : TextGrammar; vals : BisonValues; i, n
 
 //! the parser function's body: the value stacks, then the loop that reads a token when it needs
 //! one and shifts, reduces, accepts or fails on the table's action
-[arch(at="../ARCHITECTURE.md#macro-driver")]
+[arch(at="../ARCHITECTURE_MACRO.md#macro-driver")]
 def private make_driver(spec : BisonSpec; g : TextGrammar; t : LalrTables; vals : BisonValues;
                         lexer : string; result_type : TypeDeclPtr; at : LineInfo) : ExpressionPtr {
     let p = spec.param
@@ -650,7 +650,7 @@ def private style_lint_armed() : bool {
 
 //! a compile warning at `at`, the way the style lint's are given: into the compile when the style
 //! lint is armed (`macro_style_warning`), to the log otherwise
-[arch(at="../ARCHITECTURE.md#compile-time-tables")]
+[arch(at="../ARCHITECTURE_MACRO.md#compile-time-tables")]
 def private bison_warning(msg : string; at : LineInfo) {
     if (style_lint_armed()) {
         compiling_program() |> macro_style_warning(at, msg)
